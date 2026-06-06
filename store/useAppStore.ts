@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { deletePdf, loadPdf, savePdf } from "@/lib/pdfStore";
 import type { Citation } from "@/lib/types";
 
 export type Provider = "anthropic" | "openai" | "deepseek";
@@ -28,6 +29,9 @@ export interface Conversation {
   title: string;
   messages: UIMessage[];
   updatedAt: number;
+  /** 该会话当时打开的 PDF（文件存 IndexedDB，按 id 取） */
+  pdfId?: string;
+  pdfName?: string;
 }
 
 function deriveTitle(messages: UIMessage[]): string {
@@ -44,6 +48,7 @@ interface AppState {
   // —— PDF / 引用（不持久化）——
   fileUrl: string | null;
   fileName: string | null;
+  pdfId: string | null;
   numPages: number;
   citations: Citation[];
 
@@ -80,6 +85,8 @@ interface AppState {
   newConversation: () => void;
   switchConversation: (id: string) => void;
   deleteConversation: (id: string) => void;
+  /** 加载某会话当时的 PDF（切换会话 / 刷新恢复时调用） */
+  loadConversationPdf: (conv?: Conversation) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>()(
@@ -87,6 +94,7 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       fileUrl: null,
       fileName: null,
+      pdfId: null,
       numPages: 0,
       citations: [],
 
@@ -112,9 +120,12 @@ export const useAppStore = create<AppState>()(
       openPdf: (file) => {
         const prev = get().fileUrl;
         if (prev) URL.revokeObjectURL(prev);
+        const id = crypto.randomUUID();
+        void savePdf(id, file); // 后台存入 IndexedDB，供历史会话恢复
         set({
           fileUrl: URL.createObjectURL(file),
           fileName: file.name,
+          pdfId: id,
           numPages: 0,
           citations: [],
         });
@@ -122,7 +133,13 @@ export const useAppStore = create<AppState>()(
       closePdf: () => {
         const prev = get().fileUrl;
         if (prev) URL.revokeObjectURL(prev);
-        set({ fileUrl: null, fileName: null, numPages: 0, citations: [] });
+        set({
+          fileUrl: null,
+          fileName: null,
+          pdfId: null,
+          numPages: 0,
+          citations: [],
+        });
       },
       setNumPages: (n) => set({ numPages: n }),
       addCitation: (c) =>
@@ -161,24 +178,65 @@ export const useAppStore = create<AppState>()(
           const id = st.currentId;
           if (!id || messages.length === 0) return {};
           const title = deriveTitle(messages) || "新对话";
+          const pdfId = st.pdfId ?? undefined;
+          const pdfName = st.fileName ?? undefined;
           const exists = st.conversations.some((c) => c.id === id);
           const conversations = exists
             ? st.conversations.map((c) =>
-                c.id === id ? { ...c, messages, title, updatedAt: Date.now() } : c,
+                c.id === id
+                  ? {
+                      ...c,
+                      messages,
+                      title,
+                      updatedAt: Date.now(),
+                      pdfId,
+                      pdfName,
+                    }
+                  : c,
               )
             : [
-                { id, title, messages, updatedAt: Date.now() },
+                { id, title, messages, updatedAt: Date.now(), pdfId, pdfName },
                 ...st.conversations,
               ];
           return { conversations };
         }),
       newConversation: () => set({ currentId: null }),
       switchConversation: (id) => set({ currentId: id }),
+      loadConversationPdf: async (conv) => {
+        const prev = get().fileUrl;
+        if (conv?.pdfId) {
+          const file = await loadPdf(conv.pdfId);
+          if (file) {
+            if (prev) URL.revokeObjectURL(prev);
+            set({
+              fileUrl: URL.createObjectURL(file),
+              fileName: conv.pdfName ?? file.name,
+              pdfId: conv.pdfId,
+              numPages: 0,
+              citations: [],
+            });
+            return;
+          }
+        }
+        // 该会话没有关联 PDF（或文件已丢失）：清空阅读器
+        if (prev) URL.revokeObjectURL(prev);
+        set({
+          fileUrl: null,
+          fileName: null,
+          pdfId: null,
+          numPages: 0,
+          citations: [],
+        });
+      },
       deleteConversation: (id) =>
-        set((st) => ({
-          conversations: st.conversations.filter((c) => c.id !== id),
-          currentId: st.currentId === id ? null : st.currentId,
-        })),
+        set((st) => {
+          const conv = st.conversations.find((c) => c.id === id);
+          if (conv?.pdfId) void deletePdf(conv.pdfId);
+          return {
+            conversations: st.conversations.filter((c) => c.id !== id),
+            currentId: st.currentId === id ? null : st.currentId,
+          };
+        }),
     }),
     {
       name: "chatpaper",

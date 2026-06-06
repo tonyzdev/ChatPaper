@@ -57,6 +57,7 @@ export function ChatPanel() {
   const upsertCurrent = useAppStore((s) => s.upsertCurrent);
   const newConversation = useAppStore((s) => s.newConversation);
   const switchConversation = useAppStore((s) => s.switchConversation);
+  const loadConversationPdf = useAppStore((s) => s.loadConversationPdf);
   const mode = useAppStore((s) => s.mode);
   const setMode = useAppStore((s) => s.setMode);
   const pendingTranslate = useAppStore((s) => s.pendingTranslate);
@@ -112,6 +113,18 @@ export function ChatPanel() {
     sendMessage,
     setPendingTranslate,
   ]);
+
+  // 刷新后恢复上次会话的消息与当时的 PDF
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 仅挂载时恢复一次
+  useEffect(() => {
+    const { currentId: cid, conversations: convs } = useAppStore.getState();
+    if (!cid) return;
+    const conv = convs.find((c) => c.id === cid);
+    if (conv) {
+      setMessages(conv.messages);
+      void loadConversationPdf(conv);
+    }
+  }, []);
 
   // 主模型不支持图像（deepseek）且配了视觉模型时，上传/粘贴图片即刻转写
   const needsTranscribe = () =>
@@ -268,12 +281,13 @@ export function ChatPanel() {
     const conv = conversations.find((c) => c.id === id);
     switchConversation(id);
     setMessages(conv?.messages ?? []);
+    void loadConversationPdf(conv);
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-background">
-      {/* header：与左侧 PDF 工具栏等高（h-12） */}
-      <div className="flex h-12 shrink-0 items-center justify-between px-2">
+    <div className="relative flex h-full flex-col overflow-hidden bg-background">
+      {/* header：浮动毛玻璃透明，消息可滚到其下 */}
+      <div className="absolute inset-x-0 top-0 z-10 flex h-12 shrink-0 items-center justify-between bg-background/55 px-2 backdrop-blur-md">
         <Button
           className="gap-1.5"
           onClick={handleNewChat}
@@ -335,7 +349,7 @@ export function ChatPanel() {
       {/* biome-ignore lint/a11y: 划选监听用于浮钮，非交互控件 */}
       <div className="flex min-h-0 flex-1 flex-col" onMouseUp={handleReplySelect}>
         <Conversation>
-          <ConversationContent className="px-5">
+          <ConversationContent className="px-5 pt-16">
             <AutoScrollOnSend tick={sendTick} />
             {messages.length === 0
               ? null
