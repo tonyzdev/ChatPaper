@@ -1,8 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useEffect } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { ChatPanel } from "@/components/chat/ChatPanel";
+import { useAppStore } from "@/store/useAppStore";
 
 // PDF 阅读器纯浏览器渲染（pdf.js），关闭 SSR
 const PdfReader = dynamic(
@@ -18,6 +20,19 @@ const PdfReader = dynamic(
 );
 
 export default function Home() {
+  const colorMode = useAppStore((s) => s.pdfColorMode);
+
+  // 颜色模式应用为全局主题：dark→shadcn 深色；sepia→护眼绿。chat、引用浮钮等所有组件随之变化
+  useEffect(() => {
+    const el = document.documentElement;
+    el.classList.toggle("dark", colorMode === "dark");
+    if (colorMode === "sepia") {
+      el.setAttribute("data-theme", "sepia");
+    } else {
+      el.removeAttribute("data-theme");
+    }
+  }, [colorMode]);
+
   return (
     <PanelGroup
       autoSaveId="chatpaper-layout"

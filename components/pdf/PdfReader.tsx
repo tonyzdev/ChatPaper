@@ -1,6 +1,6 @@
 "use client";
 
-import { FileUp, Quote, X, ZoomIn, ZoomOut } from "lucide-react";
+import { FileUp, Leaf, Moon, Quote, Sun, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -30,7 +30,10 @@ export function PdfReader() {
   const addCitation = useAppStore((s) => s.addCitation);
 
   const [scale, setScale] = useState(1.2);
-  const [pinchZoom, setPinchZoom] = useState(false);
+  const pinchZoom = useAppStore((s) => s.pdfPinchZoom);
+  const setPinchZoom = useAppStore((s) => s.setPdfPinchZoom);
+  const colorMode = useAppStore((s) => s.pdfColorMode);
+  const setColorMode = useAppStore((s) => s.setPdfColorMode);
   const [popover, setPopover] = useState<Popover | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -123,6 +126,29 @@ export function PdfReader() {
           </label>
           <div className="flex items-center gap-0.5">
             <Button
+              aria-label="颜色模式"
+              onClick={() =>
+                setColorMode(
+                  colorMode === "light"
+                    ? "sepia"
+                    : colorMode === "sepia"
+                      ? "dark"
+                      : "light",
+                )
+              }
+              size="icon-sm"
+              title="颜色模式：日间 / 护眼 / 夜间"
+              variant="ghost"
+            >
+              {colorMode === "light" ? (
+                <Sun className="size-4" />
+              ) : colorMode === "sepia" ? (
+                <Leaf className="size-4" />
+              ) : (
+                <Moon className="size-4" />
+              )}
+            </Button>
+            <Button
               aria-label="缩小"
               onClick={() => setScale((s) => Math.max(0.5, +(s - 0.2).toFixed(2)))}
               size="icon-sm"
@@ -153,25 +179,46 @@ export function PdfReader() {
         className="relative min-h-0 flex-1 overflow-auto overscroll-contain p-4"
         onMouseUp={handleMouseUp}
         ref={scrollRef}
+        style={{
+          backgroundColor:
+            colorMode === "dark"
+              ? "#1b1b1b"
+              : colorMode === "sepia"
+                ? "#dbe7d1"
+                : undefined,
+        }}
       >
-        <Document
-          className="flex flex-col items-center gap-4"
-          error={<Center>无法加载该 PDF 文件</Center>}
-          file={fileUrl}
-          loading={<Center>正在加载 PDF…</Center>}
-          onLoadSuccess={({ numPages: n }) => setNumPages(n)}
+        {/* 颜色模式：对整个 PDF（纸张+文字）应用 filter。夜间=反色，护眼=染绿 */}
+        <div
+          className="transition-[filter] duration-150"
+          style={{
+            filter:
+              colorMode === "dark"
+                ? "invert(0.92) hue-rotate(180deg)"
+                : colorMode === "sepia"
+                  ? "sepia(0.5) saturate(0.85) hue-rotate(35deg) brightness(0.98)"
+                  : undefined,
+          }}
         >
-          {Array.from({ length: numPages }, (_, i) => (
-            <div className="shadow-md" data-page-number={i + 1} key={i}>
-              <Page
-                pageNumber={i + 1}
-                renderAnnotationLayer={false}
-                renderTextLayer
-                scale={scale}
-              />
-            </div>
-          ))}
-        </Document>
+          <Document
+            className="flex flex-col items-center gap-4"
+            error={<Center>无法加载该 PDF 文件</Center>}
+            file={fileUrl}
+            loading={<Center>正在加载 PDF…</Center>}
+            onLoadSuccess={({ numPages: n }) => setNumPages(n)}
+          >
+            {Array.from({ length: numPages }, (_, i) => (
+              <div className="shadow-md" data-page-number={i + 1} key={i}>
+                <Page
+                  pageNumber={i + 1}
+                  renderAnnotationLayer={false}
+                  renderTextLayer
+                  scale={scale}
+                />
+              </div>
+            ))}
+          </Document>
+        </div>
 
         {popover && (
           <div

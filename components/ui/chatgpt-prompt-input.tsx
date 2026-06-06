@@ -30,21 +30,20 @@ export interface PromptBoxProps {
   onSubmit: () => void;
   status?: PromptBoxStatus;
   onStop?: () => void;
-  /** 传入则显示「+」附件按钮 */
+  /** 传入则启用附件（含 Ctrl+V 粘贴）。 */
   onAttachFiles?: (files: FileList) => void;
+  /** 是否显示「+」按钮（粘贴功能不受此影响），默认显示 */
+  showAttachButton?: boolean;
+  /** 除文本外是否有可发送内容（引用/附件），用于允许“只发图不配文字” */
+  extraContent?: boolean;
+  /** 为 true 时禁止发送（如图片正在解析中） */
+  disabled?: boolean;
   placeholder?: string;
-  /** 输入框上方插槽（用于引用 chips 等） */
+  /** 输入框上方插槽（用于引用 chips / 附件预览等） */
   header?: React.ReactNode;
   className?: string;
 }
 
-/**
- * 基于 21st.dev「chatgpt-prompt-input」的视觉，改造为受控、可接 useChat 的输入框：
- * - 受控 value / onValueChange / onSubmit
- * - status + onStop：生成中发送键变停止键
- * - header 插槽放引用 chips
- * - 支持中文输入法（compose 中不触发发送）、Enter 发送 / Shift+Enter 换行
- */
 export function PromptBox({
   value,
   onValueChange,
@@ -52,6 +51,9 @@ export function PromptBox({
   status = "ready",
   onStop,
   onAttachFiles,
+  showAttachButton = true,
+  extraContent = false,
+  disabled = false,
   placeholder = "问点什么…",
   header,
   className,
@@ -61,7 +63,6 @@ export function PromptBox({
   const isGenerating = status === "submitted" || status === "streaming";
   const hasValue = value.trim().length > 0;
 
-  // 自动增高(上限 200px,超出内部滚动)
   React.useLayoutEffect(() => {
     const ta = textareaRef.current;
     if (ta) {
@@ -75,7 +76,8 @@ export function PromptBox({
       onStop?.();
       return;
     }
-    if (hasValue) onSubmit();
+    if (disabled) return;
+    if (hasValue || extraContent) onSubmit();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -142,7 +144,7 @@ export function PromptBox({
       />
 
       <div className="mt-0.5 flex items-center gap-2 px-2 pb-0.5">
-        {onAttachFiles ? (
+        {onAttachFiles && showAttachButton ? (
           <button
             aria-label="添加图片或文件"
             className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none"
@@ -153,10 +155,17 @@ export function PromptBox({
           </button>
         ) : null}
 
+        <span className="select-none text-muted-foreground text-xs">
+          {disabled ? "图片解析中…" : isGenerating ? "生成中…" : ""}
+        </span>
+
         <button
           aria-label={isGenerating ? "停止" : "发送"}
           className="ml-auto flex size-9 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:bg-primary/40"
-          disabled={!hasValue && !isGenerating}
+          disabled={
+            (!hasValue && !extraContent && !isGenerating) ||
+            (disabled && !isGenerating)
+          }
           onClick={submit}
           type="button"
         >

@@ -124,6 +124,28 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* 护眼（豆沙绿）主题：整个 app 偏绿，配合 PDF filter 染绿纸张 */
+[data-theme="sepia"] {
+  --background: oklch(0.92 0.03 140);
+  --foreground: oklch(0.27 0.02 150);
+  --card: oklch(0.94 0.025 140);
+  --card-foreground: oklch(0.27 0.02 150);
+  --popover: oklch(0.94 0.025 140);
+  --popover-foreground: oklch(0.27 0.02 150);
+  --primary: oklch(0.46 0.09 155);
+  --primary-foreground: oklch(0.97 0.02 140);
+  --secondary: oklch(0.87 0.04 140);
+  --secondary-foreground: oklch(0.3 0.02 150);
+  --muted: oklch(0.88 0.035 140);
+  --muted-foreground: oklch(0.47 0.025 150);
+  --accent: oklch(0.85 0.05 140);
+  --accent-foreground: oklch(0.3 0.02 150);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.83 0.04 140);
+  --input: oklch(0.83 0.04 140);
+  --ring: oklch(0.55 0.06 150);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -143,10 +165,10 @@ body {
   overscroll-behavior: none;
 }
 
-/* PDF 文字选区高亮 */
+/* PDF 划选高亮：固定金黄半透明，确保日间/护眼/夜间（含反色 filter）下都清晰可见 */
 .textLayer ::selection,
 .react-pdf__Page__textContent span::selection {
-  background: color-mix(in srgb, var(--primary) 20%, transparent);
+  background: rgba(250, 190, 20, 0.55);
 }
 
 /* react-pdf 页面外观干净稳定 */

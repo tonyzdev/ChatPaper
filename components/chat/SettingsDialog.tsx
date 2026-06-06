@@ -55,6 +55,7 @@ export function SettingsDialog({
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [model, setModel] = useState(settings.model);
   const [vision, setVision] = useState<VisionSettings>(settings.vision);
+  const [thinking, setThinking] = useState(settings.deepseekThinking);
   const [test, setTest] = useState<TestState>({ status: "idle" });
 
   useEffect(() => {
@@ -63,6 +64,7 @@ export function SettingsDialog({
       setApiKey(settings.apiKey);
       setModel(settings.model);
       setVision(settings.vision);
+      setThinking(settings.deepseekThinking);
       setTest({ status: "idle" });
     }
   }, [open, settings]);
@@ -73,6 +75,7 @@ export function SettingsDialog({
       apiKey: apiKey.trim(),
       model: model.trim(),
       vision: { ...vision, apiKey: vision.apiKey.trim(), model: vision.model.trim() },
+      deepseekThinking: thinking,
     });
     onOpenChange(false);
   };
@@ -150,13 +153,25 @@ export function SettingsDialog({
             </div>
           </Field>
 
+          {provider === "deepseek" ? (
+            <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
+              <div className="flex flex-col">
+                <span className="font-medium text-sm">推理模式（思考）</span>
+                <span className="text-muted-foreground text-xs">
+                  开启后 DeepSeek 先思考再作答并展示思考过程（更慢，默认关）
+                </span>
+              </div>
+              <Switch checked={thinking} onCheckedChange={setThinking} />
+            </div>
+          ) : null}
+
           {/* 图像转写（给不支持图像的模型，如 DeepSeek） */}
           <div className="flex flex-col gap-2.5 rounded-lg border p-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex flex-col">
                 <span className="font-medium text-sm">图像转写</span>
                 <span className="text-muted-foreground text-xs">
-                  DeepSeek 等不支持图像的模型，先用视觉模型把图转成文字再喂给它
+                  DeepSeek 等不支持图像的模型，先用视觉模型把图转成文字再加入上下文
                 </span>
               </div>
               <Switch

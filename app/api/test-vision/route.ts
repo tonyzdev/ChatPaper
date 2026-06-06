@@ -1,8 +1,7 @@
+import { SAMPLE_IMAGE } from "@/lib/sample-image";
 import { describeImage } from "@/lib/vision";
 
-// 一张写有 "OK" 字样的小测试图（PNG，base64），用于验证视觉模型能否识别图像
-const TEST_IMAGE =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAUCAYAAADPym6aAAAAa0lEQVR4nO3WQQqAMAxE0Yl4/yvHhSBSqDViEvjvQDdlOgwUkSStq7sHWdM9wKK6e5DkPqUq3oUkSZL2siVKkiRJ0n9YkiRJkqStLEmSJEnayJYoSZIkSXfYEiVJkiRJN9gSJUmSJOkGW6IkSdJ5LhM6BCsfh3+jAAAAAElFTkSuQmCC";
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const { apiKey, model, baseURL } = (await req.json()) as {
@@ -16,13 +15,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    const out = await describeImage(TEST_IMAGE, {
+    const out = await describeImage(SAMPLE_IMAGE, {
       apiKey,
       model: model?.trim() || "qwen3-vl-flash",
       baseURL:
         baseURL?.trim() || "https://dashscope.aliyuncs.com/compatible-mode/v1",
     });
-    return Response.json({ ok: true, sample: out.slice(0, 80) });
+    return Response.json({ ok: true, sample: out.slice(0, 120) });
   } catch (e) {
     return Response.json({
       ok: false,

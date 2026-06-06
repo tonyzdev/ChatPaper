@@ -19,6 +19,8 @@ export interface Settings {
   /** 留空则用各 provider 的默认模型 */
   model: string;
   vision: VisionSettings;
+  /** DeepSeek 思考/推理模式（默认关，开启会展示思考过程） */
+  deepseekThinking: boolean;
 }
 
 export interface Conversation {
@@ -49,6 +51,9 @@ interface AppState {
   settings: Settings;
   conversations: Conversation[];
   currentId: string | null;
+  // PDF 偏好（持久化）
+  pdfColorMode: "light" | "sepia" | "dark";
+  pdfPinchZoom: boolean;
 
   openPdf: (file: File) => void;
   closePdf: () => void;
@@ -59,6 +64,8 @@ interface AppState {
 
   setSettings: (s: Partial<Settings>) => void;
   hasApiKey: () => boolean;
+  setPdfColorMode: (m: "light" | "sepia" | "dark") => void;
+  setPdfPinchZoom: (v: boolean) => void;
 
   /** 确保存在当前会话，返回其 id */
   ensureConversation: () => string;
@@ -88,9 +95,12 @@ export const useAppStore = create<AppState>()(
           model: "qwen3-vl-flash",
           baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
         },
+        deepseekThinking: false,
       },
       conversations: [],
       currentId: null,
+      pdfColorMode: "light",
+      pdfPinchZoom: false,
 
       openPdf: (file) => {
         const prev = get().fileUrl;
@@ -119,6 +129,8 @@ export const useAppStore = create<AppState>()(
       setSettings: (s) =>
         set((st) => ({ settings: { ...st.settings, ...s } })),
       hasApiKey: () => get().settings.apiKey.trim().length > 0,
+      setPdfColorMode: (m) => set({ pdfColorMode: m }),
+      setPdfPinchZoom: (v) => set({ pdfPinchZoom: v }),
 
       ensureConversation: () => {
         const { currentId, conversations } = get();
@@ -166,6 +178,8 @@ export const useAppStore = create<AppState>()(
         settings: s.settings,
         conversations: s.conversations,
         currentId: s.currentId,
+        pdfColorMode: s.pdfColorMode,
+        pdfPinchZoom: s.pdfPinchZoom,
       }),
       // 旧数据可能没有 settings.vision，深合并补默认，避免读取报错
       merge: (persisted, current) => {

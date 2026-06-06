@@ -4,18 +4,12 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
-import {
-  History,
-  MessageSquareText,
-  Quote,
-  Settings,
-  SquarePen,
-} from "lucide-react";
+import { History, Quote, Settings, SquarePen } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useStickToBottomContext } from "use-stick-to-bottom";
 import {
   Conversation,
   ConversationContent,
-  ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import {
@@ -23,7 +17,10 @@ import {
   MessageContent,
   MessageResponse,
 } from "@/components/ai-elements/message";
-import { type Attachment, AttachmentList } from "@/components/chat/AttachmentList";
+import {
+  type Attachment,
+  AttachmentList,
+} from "@/components/chat/AttachmentList";
 import { CitationChips } from "@/components/chat/CitationChips";
 import { HistoryDialog } from "@/components/chat/HistoryDialog";
 import { SettingsDialog } from "@/components/chat/SettingsDialog";
@@ -34,6 +31,15 @@ import { useAppStore } from "@/store/useAppStore";
 
 function getMessageCitations(m: UIMessage): Citation[] | undefined {
   return (m.metadata as { citations?: Citation[] } | undefined)?.citations;
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 export function ChatPanel() {
@@ -55,6 +61,7 @@ export function ChatPanel() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [sendTick, setSendTick] = useState(0);
   const [replyQuote, setReplyQuote] = useState<{
     text: string;
     top: number;
@@ -68,12 +75,54 @@ export function ChatPanel() {
     }
   }, [status, messages, upsertCurrent]);
 
+  // 主模型不支持图像（deepseek）且配了视觉模型时，上传/粘贴图片即刻转写
+  const needsTranscribe = () =>
+    settings.provider === "deepseek" &&
+    settings.vision.enabled &&
+    settings.vision.apiKey.trim().length > 0;
+
+  const transcribe = async (item: Attachment) => {
+    setAttachments((prev) =>
+      prev.map((a) =>
+        a.url === item.url ? { ...a, status: "transcribing" } : a,
+      ),
+    );
+    try {
+      const imageUrl = await fileToDataUrl(item.file);
+      const res = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl, vision: settings.vision }),
+      });
+      const data = (await res.json()) as { ok: boolean; text?: string };
+      setAttachments((prev) =>
+        prev.map((a) =>
+          a.url === item.url
+            ? data.ok
+              ? { ...a, status: "ready", transcription: data.text }
+              : { ...a, status: "error" }
+            : a,
+        ),
+      );
+    } catch {
+      setAttachments((prev) =>
+        prev.map((a) => (a.url === item.url ? { ...a, status: "error" } : a)),
+      );
+    }
+  };
+
   const addFiles = (list: FileList) => {
-    const next = Array.from(list).map((file) => ({
+    const next: Attachment[] = Array.from(list).map((file) => ({
       file,
       url: URL.createObjectURL(file),
+      status: "ready",
     }));
     setAttachments((prev) => [...prev, ...next]);
+    if (needsTranscribe()) {
+      for (const item of next) {
+        if (item.file.type.startsWith("image/")) void transcribe(item);
+      }
+    }
   };
   const removeAttachment = (index: number) => {
     setAttachments((prev) => {
@@ -89,6 +138,9 @@ export function ChatPanel() {
     });
   };
 
+  const transcribing = attachments.some((a) => a.status === "transcribing");
+  const hasExtra = citations.length > 0 || attachments.length > 0;
+
   // 在 AI 回复里划选文本 → 浮钮「引用」
   const handleReplySelect = () => {
     const sel = window.getSelection();
@@ -103,8 +155,7 @@ export function ChatPanel() {
       return;
     }
     const node = range.commonAncestorContainer;
-    const el =
-      node.nodeType === 1 ? (node as HTMLElement) : node.parentElement;
+    const el = node.nodeType === 1 ? (node as HTMLElement) : node.parentElement;
     // 仅当选区落在 AI 回复（assistant 气泡）内才提供引用
     if (!el?.closest(".is-assistant")) {
       setReplyQuote(null);
@@ -125,8 +176,9 @@ export function ChatPanel() {
       setSettingsOpen(true);
       return;
     }
+    if (transcribing) return; // 图片解析中，先不发送
     const t = text.trim();
-    if (!t && citations.length === 0 && attachments.length === 0) return;
+    if (!t && !hasExtra) return; // 允许“只发图/只发引用”，但不能全空
 
     let files: FileList | undefined;
     if (attachments.length > 0) {
@@ -134,6 +186,10 @@ export function ChatPanel() {
       for (const a of attachments) dt.items.add(a.file);
       files = dt.files;
     }
+    // 前端已转写好的图片文本，按图片顺序传给后端（deepseek 用）
+    const imageTranscriptions = attachments
+      .filter((a) => a.file.type.startsWith("image/"))
+      .map((a) => a.transcription ?? null);
 
     const sentCitations = citations;
     ensureConversation();
@@ -141,7 +197,9 @@ export function ChatPanel() {
       {
         text: t || "请结合我提供的图片/引用进行说明。",
         files,
-        metadata: sentCitations.length ? { citations: sentCitations } : undefined,
+        metadata: sentCitations.length
+          ? { citations: sentCitations }
+          : undefined,
       },
       {
         body: {
@@ -149,13 +207,15 @@ export function ChatPanel() {
           provider: settings.provider,
           apiKey: settings.apiKey,
           model: settings.model,
-          vision: settings.vision,
+          imageTranscriptions,
+          deepseekThinking: settings.deepseekThinking,
         },
       },
     );
     setText("");
     clearAttachments();
     clearCitations();
+    setSendTick((n) => n + 1); // 触发滚动到底部
   };
 
   const handleNewChat = () => {
@@ -176,7 +236,12 @@ export function ChatPanel() {
     <div className="flex h-full flex-col overflow-hidden bg-background">
       {/* header：与左侧 PDF 工具栏等高（h-12） */}
       <div className="flex h-12 shrink-0 items-center justify-between px-2">
-        <Button className="gap-1.5" onClick={handleNewChat} size="sm" variant="ghost">
+        <Button
+          className="gap-1.5"
+          onClick={handleNewChat}
+          size="sm"
+          variant="ghost"
+        >
           <SquarePen className="size-4" />
           新对话
         </Button>
@@ -201,65 +266,71 @@ export function ChatPanel() {
       </div>
 
       {/* 消息区：在 AI 回复里划选可引用 */}
-      <div
-        className="flex min-h-0 flex-1 flex-col"
-        onMouseUp={handleReplySelect}
-      >
+      {/* biome-ignore lint/a11y: 划选监听用于浮钮，非交互控件 */}
+      <div className="flex min-h-0 flex-1 flex-col" onMouseUp={handleReplySelect}>
         <Conversation>
           <ConversationContent className="px-5">
-            {messages.length === 0 ? (
-              <ConversationEmptyState
-                description="在左侧 PDF 中划选文本作为引用，然后在下方提问。"
-                icon={<MessageSquareText className="size-8" />}
-                title="开始对话"
-              />
-            ) : (
-              messages.map((m) => {
-                const msgCitations = getMessageCitations(m);
-                return (
-                  <Message from={m.role} key={m.id}>
-                    <MessageContent>
-                      {m.role === "user" && msgCitations?.length ? (
-                        <MessageCitations citations={msgCitations} />
-                      ) : null}
-                      {m.parts.map((part, i) => {
-                        if (part.type === "text") {
-                          return (
-                            <MessageResponse key={`${m.id}-${i}`}>
-                              {part.text}
-                            </MessageResponse>
-                          );
-                        }
-                        if (
-                          part.type === "file" &&
-                          part.mediaType?.startsWith("image/")
-                        ) {
-                          return (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              alt={part.filename ?? "附件图片"}
-                              className="max-w-xs rounded-lg border"
-                              key={`${m.id}-${i}`}
-                              src={part.url}
-                            />
-                          );
-                        }
-                        return null;
-                      })}
-                      {/* 流式开始但首字未到时，气泡内继续显示 loading，避免空档 */}
-                      {m.role === "assistant" &&
-                      !m.parts.some(
-                        (p) =>
-                          (p.type === "text" && p.text.length > 0) ||
-                          p.type === "file",
-                      ) ? (
-                        <ThinkingDots />
-                      ) : null}
-                    </MessageContent>
-                  </Message>
-                );
-              })
-            )}
+            <AutoScrollOnSend tick={sendTick} />
+            {messages.length === 0
+              ? null
+              : messages.map((m) => {
+                  const msgCitations = getMessageCitations(m);
+                  return (
+                    <Message from={m.role} key={m.id}>
+                      <MessageContent>
+                        {m.role === "user" && msgCitations?.length ? (
+                          <MessageCitations citations={msgCitations} />
+                        ) : null}
+                        {m.parts.map((part, i) => {
+                          if (part.type === "reasoning") {
+                            return (
+                              <ReasoningBlock
+                                key={`${m.id}-${i}`}
+                                streaming={
+                                  status === "streaming" &&
+                                  m === messages.at(-1)
+                                }
+                                text={part.text}
+                              />
+                            );
+                          }
+                          if (part.type === "text") {
+                            return (
+                              <MessageResponse key={`${m.id}-${i}`}>
+                                {part.text}
+                              </MessageResponse>
+                            );
+                          }
+                          if (
+                            part.type === "file" &&
+                            part.mediaType?.startsWith("image/")
+                          ) {
+                            return (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                alt={part.filename ?? "附件图片"}
+                                className="max-w-xs rounded-lg border"
+                                key={`${m.id}-${i}`}
+                                src={part.url}
+                              />
+                            );
+                          }
+                          return null;
+                        })}
+                        {/* 流式开始但首字未到时，气泡内继续显示 loading，避免空档 */}
+                        {m.role === "assistant" &&
+                        !m.parts.some(
+                          (p) =>
+                            (p.type === "text" && p.text.length > 0) ||
+                            (p.type === "reasoning" && p.text.length > 0) ||
+                            p.type === "file",
+                        ) ? (
+                          <ThinkingDots />
+                        ) : null}
+                      </MessageContent>
+                    </Message>
+                  );
+                })}
 
             {status === "submitted" && messages.at(-1)?.role !== "assistant" ? (
               <Message from="assistant">
@@ -273,10 +344,12 @@ export function ChatPanel() {
         </Conversation>
       </div>
 
-      <div className="shrink-0 px-5 pb-3 pt-1">
+      <div className="shrink-0 px-5 pt-1 pb-3">
         <PromptBox
+          disabled={transcribing}
+          extraContent={hasExtra}
           header={
-            citations.length > 0 || attachments.length > 0 ? (
+            hasExtra ? (
               <div className="flex flex-col gap-2">
                 <AttachmentList
                   attachments={attachments}
@@ -291,6 +364,7 @@ export function ChatPanel() {
           onSubmit={handleSend}
           onValueChange={setText}
           placeholder="问点什么，或在左侧 PDF 划选文本后引用…"
+          showAttachButton={false}
           status={status}
           value={text}
         />
@@ -324,13 +398,45 @@ export function ChatPanel() {
   );
 }
 
+/** 在 Conversation 内部：每次发送（tick 变化）强制滚到底 */
+function AutoScrollOnSend({ tick }: { tick: number }) {
+  const { scrollToBottom } = useStickToBottomContext();
+  useEffect(() => {
+    if (tick > 0) scrollToBottom();
+  }, [tick, scrollToBottom]);
+  return null;
+}
+
+/** DeepSeek 思考过程（可折叠） */
+function ReasoningBlock({
+  text,
+  streaming,
+}: {
+  text: string;
+  streaming: boolean;
+}) {
+  return (
+    <details
+      className="mb-2 rounded-lg border bg-muted/40 px-3 py-2"
+      open={streaming}
+    >
+      <summary className="cursor-pointer select-none font-medium text-muted-foreground text-xs">
+        💭 思考过程
+      </summary>
+      <div className="mt-2 whitespace-pre-wrap text-muted-foreground text-xs leading-relaxed">
+        {text}
+      </div>
+    </details>
+  );
+}
+
 /** 用户气泡里显示这条消息引用了哪些来源 */
 function MessageCitations({ citations }: { citations: Citation[] }) {
   return (
     <div className="mb-1.5 flex flex-col gap-1">
       {citations.map((c) => (
         <div
-          className="flex items-center gap-2 rounded-r border-l-2 border-primary/40 bg-background/50 py-1 pr-2 pl-2 text-xs"
+          className="flex items-center gap-2 rounded-r border-primary/40 border-l-2 bg-background/50 py-1 pr-2 pl-2 text-xs"
           key={c.id}
         >
           <span className="line-clamp-1 flex-1 text-muted-foreground">
