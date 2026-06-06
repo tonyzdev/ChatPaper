@@ -49,6 +49,27 @@ export async function POST(req: Request) {
     }
   }
 
+  // DeepSeek 标准 API 不支持图像输入（会报 unknown variant image_url，并污染后续会话），
+  // 因此对 deepseek 把图像 part 替换为文字占位。
+  if (provider === "deepseek") {
+    for (let i = 0; i < modelMessages.length; i++) {
+      const m = modelMessages[i];
+      if (Array.isArray(m.content)) {
+        modelMessages[i] = {
+          ...m,
+          content: m.content.map((p) =>
+            p.type === "image" || p.type === "file"
+              ? {
+                  type: "text" as const,
+                  text: "［图片：暂不支持图像识别］",
+                }
+              : p,
+          ),
+        } as ModelMessage;
+      }
+    }
+  }
+
   const result = streamText({
     model: resolveModel({ provider, apiKey, model }),
     system: SYSTEM_PROMPT,

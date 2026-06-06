@@ -174,7 +174,7 @@ export function ChatPanel() {
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
       {/* header：与左侧 PDF 工具栏等高（h-12） */}
-      <div className="flex h-12 shrink-0 items-center justify-between border-b px-2">
+      <div className="flex h-12 shrink-0 items-center justify-between px-2">
         <Button className="gap-1.5" onClick={handleNewChat} size="sm" variant="ghost">
           <SquarePen className="size-4" />
           新对话

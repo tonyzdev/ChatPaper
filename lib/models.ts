@@ -18,6 +18,9 @@ export interface ModelRequest {
  * 1) 前端传来的 BYOK（apiKey + provider）—— 部署后用户填自己的 key
  * 2) 服务端环境变量（ANTHROPIC_API_KEY / OPENAI_API_KEY / DEEPSEEK_API_KEY）
  * 3) Vercel AI Gateway 字符串模型（需 AI_GATEWAY_API_KEY 或 Vercel OIDC）
+ *
+ * 注：DeepSeek 用官方 @ai-sdk/deepseek（走 /chat/completions）。其标准 API 暂不支持
+ * 图像输入，图像在 route 层被过滤为文字占位。
  */
 export function resolveModel({ provider, apiKey, model }: ModelRequest): LanguageModel {
   const key = apiKey?.trim();
