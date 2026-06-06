@@ -1,5 +1,10 @@
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
-import { buildSystemPrompt } from "@/lib/citations";
+import {
+  convertToModelMessages,
+  type ModelMessage,
+  streamText,
+  type UIMessage,
+} from "ai";
+import { buildCitationBlock, SYSTEM_PROMPT } from "@/lib/citations";
 import { resolveModel } from "@/lib/models";
 import type { Citation } from "@/lib/types";
 
@@ -19,10 +24,35 @@ export async function POST(req: Request) {
   const { messages, citations, provider, apiKey, model }: ChatBody =
     await req.json();
 
+  const modelMessages = await convertToModelMessages(messages);
+
+  // 把引用注入到最后一条 user 消息，确保模型在对话上下文中直接看到
+  const citeBlock = buildCitationBlock(citations);
+  if (citeBlock) {
+    let idx = -1;
+    for (let i = modelMessages.length - 1; i >= 0; i--) {
+      if (modelMessages[i].role === "user") {
+        idx = i;
+        break;
+      }
+    }
+    if (idx >= 0) {
+      const m = modelMessages[idx];
+      const content =
+        typeof m.content === "string"
+          ? `${citeBlock}\n\n---\n\n${m.content}`
+          : [
+              { type: "text" as const, text: `${citeBlock}\n\n---\n\n` },
+              ...m.content,
+            ];
+      modelMessages[idx] = { ...m, content } as ModelMessage;
+    }
+  }
+
   const result = streamText({
     model: resolveModel({ provider, apiKey, model }),
-    system: buildSystemPrompt(citations),
-    messages: await convertToModelMessages(messages),
+    system: SYSTEM_PROMPT,
+    messages: modelMessages,
   });
 
   return result.toUIMessageStreamResponse();

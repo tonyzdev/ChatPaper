@@ -5,7 +5,7 @@ import type { LanguageModel } from "ai";
 
 const DEFAULT_ANTHROPIC = "claude-sonnet-4-5";
 const DEFAULT_OPENAI = "gpt-4o-mini";
-const DEFAULT_DEEPSEEK = "deepseek-chat";
+const DEFAULT_DEEPSEEK = "deepseek-v4-flash";
 
 export interface ModelRequest {
   provider?: string;

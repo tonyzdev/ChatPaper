@@ -10,27 +10,27 @@ export function CitationChips() {
   if (citations.length === 0) return null;
 
   return (
-    <div className="flex w-full flex-wrap gap-1.5">
+    <div className="flex w-full flex-col gap-1">
       {citations.map((c) => (
-        <span
-          className="group inline-flex max-w-[16rem] items-center gap-1 rounded-md border bg-muted/60 py-1 pr-1 pl-1.5 text-xs"
+        <div
+          className="group flex items-center gap-2 rounded-r border-l-2 border-primary/40 bg-muted/50 py-1 pr-1 pl-2 text-xs"
           key={c.id}
         >
-          <span className="shrink-0 rounded bg-primary/10 px-1 font-medium text-primary">
-            p.{c.page}
-          </span>
-          <span className="truncate text-muted-foreground" title={c.text}>
+          <span className="line-clamp-1 flex-1 text-muted-foreground">
             {c.text}
+          </span>
+          <span className="shrink-0 text-[11px] text-muted-foreground/60">
+            第 {c.page} 页
           </span>
           <button
             aria-label="移除引用"
-            className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+            className="shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-background hover:text-foreground"
             onClick={() => removeCitation(c.id)}
             type="button"
           >
             <X className="size-3" />
           </button>
-        </span>
+        </div>
       ))}
     </div>
   );

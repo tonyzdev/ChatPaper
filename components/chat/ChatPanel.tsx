@@ -158,7 +158,7 @@ export function ChatPanel() {
       </div>
 
       <Conversation>
-        <ConversationContent>
+        <ConversationContent className="px-5">
           {messages.length === 0 ? (
             <ConversationEmptyState
               description="在左侧 PDF 中划选文本作为引用，然后在下方提问。"
@@ -216,7 +216,7 @@ export function ChatPanel() {
         <ConversationScrollButton />
       </Conversation>
 
-      <div className="shrink-0 px-3 pb-3 pt-1">
+      <div className="shrink-0 px-5 pb-3 pt-1">
         <PromptBox
           header={
             citations.length > 0 || attachments.length > 0 ? (
@@ -252,17 +252,19 @@ export function ChatPanel() {
 /** 用户气泡里显示这条消息引用了哪些 PDF 片段 */
 function MessageCitations({ citations }: { citations: Citation[] }) {
   return (
-    <div className="mb-1 flex flex-wrap gap-1">
+    <div className="mb-1.5 flex flex-col gap-1">
       {citations.map((c) => (
-        <span
-          className="inline-flex max-w-[16rem] items-center gap-1 rounded-md border bg-background/60 px-1.5 py-0.5 text-xs"
+        <div
+          className="flex items-center gap-2 rounded-r border-l-2 border-primary/40 bg-background/50 py-1 pr-2 pl-2 text-xs"
           key={c.id}
         >
-          <span className="shrink-0 rounded bg-primary/10 px-1 font-medium text-primary">
-            p.{c.page}
+          <span className="line-clamp-1 flex-1 text-muted-foreground">
+            {c.text}
           </span>
-          <span className="truncate text-muted-foreground">{c.text}</span>
-        </span>
+          <span className="shrink-0 text-[11px] text-muted-foreground/60">
+            第 {c.page} 页
+          </span>
+        </div>
       ))}
     </div>
   );
