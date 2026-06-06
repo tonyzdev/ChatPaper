@@ -1,9 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // 部署时不让 ESLint 阻塞构建（vendored AI Elements / 输入框组件含 @ts-nocheck 等）；
-  // TypeScript 类型检查仍然保留。
-  eslint: { ignoreDuringBuilds: true },
+  /* Next 16 构建默认不运行 ESLint，无需额外配置 */
 };
 
 export default nextConfig;
