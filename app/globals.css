@@ -165,10 +165,10 @@ body {
   overscroll-behavior: none;
 }
 
-/* PDF 划选高亮：固定金黄半透明，确保日间/护眼/夜间（含反色 filter）下都清晰可见 */
+/* PDF 划选高亮：蓝色半透明。蓝色经夜间 invert+hue-rotate 后仍接近蓝，日间也是经典选区色 */
 .textLayer ::selection,
 .react-pdf__Page__textContent span::selection {
-  background: rgba(250, 190, 20, 0.55);
+  background: rgba(56, 132, 255, 0.5);
 }
 
 /* react-pdf 页面外观干净稳定 */

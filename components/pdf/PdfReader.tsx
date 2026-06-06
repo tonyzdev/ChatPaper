@@ -28,6 +28,8 @@ export function PdfReader() {
   const closePdf = useAppStore((s) => s.closePdf);
   const setNumPages = useAppStore((s) => s.setNumPages);
   const addCitation = useAppStore((s) => s.addCitation);
+  const mode = useAppStore((s) => s.mode);
+  const setPendingTranslate = useAppStore((s) => s.setPendingTranslate);
 
   const [scale, setScale] = useState(1.2);
   const pinchZoom = useAppStore((s) => s.pdfPinchZoom);
@@ -75,6 +77,13 @@ export function PdfReader() {
       setPopover(null);
       return;
     }
+    // 翻译模式：划选即翻译，不弹引用浮钮
+    if (mode === "translate") {
+      setPendingTranslate(text);
+      sel.removeAllRanges();
+      setPopover(null);
+      return;
+    }
     let node: Node | null = range.startContainer;
     let page = 1;
     while (node && node !== container) {
@@ -92,7 +101,7 @@ export function PdfReader() {
       top: r.top - c.top + container.scrollTop - 8,
       left: r.left - c.left + container.scrollLeft + r.width / 2,
     });
-  }, []);
+  }, [mode, setPendingTranslate]);
 
   const confirmCite = useCallback(() => {
     if (!popover) return;

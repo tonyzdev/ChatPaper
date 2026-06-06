@@ -27,6 +27,7 @@ import { SettingsDialog } from "@/components/chat/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import { PromptBox } from "@/components/ui/chatgpt-prompt-input";
 import type { Citation } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/useAppStore";
 
 function getMessageCitations(m: UIMessage): Citation[] | undefined {
@@ -56,6 +57,10 @@ export function ChatPanel() {
   const upsertCurrent = useAppStore((s) => s.upsertCurrent);
   const newConversation = useAppStore((s) => s.newConversation);
   const switchConversation = useAppStore((s) => s.switchConversation);
+  const mode = useAppStore((s) => s.mode);
+  const setMode = useAppStore((s) => s.setMode);
+  const pendingTranslate = useAppStore((s) => s.pendingTranslate);
+  const setPendingTranslate = useAppStore((s) => s.setPendingTranslate);
 
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -74,6 +79,39 @@ export function ChatPanel() {
       upsertCurrent(messages);
     }
   }, [status, messages, upsertCurrent]);
+
+  // 翻译模式：左侧划选的文本到达后自动翻译
+  useEffect(() => {
+    if (mode !== "translate" || !pendingTranslate) return;
+    const txt = pendingTranslate;
+    setPendingTranslate(null);
+    if (!settings.apiKey.trim()) {
+      setSettingsOpen(true);
+      return;
+    }
+    ensureConversation();
+    sendMessage(
+      {
+        text: `请翻译下面的文字（中文↔英文互译），只输出译文，不要任何解释：\n\n${txt}`,
+      },
+      {
+        body: {
+          provider: settings.provider,
+          apiKey: settings.apiKey,
+          model: settings.model,
+          deepseekThinking: settings.deepseekThinking,
+        },
+      },
+    );
+    setSendTick((n) => n + 1);
+  }, [
+    pendingTranslate,
+    mode,
+    settings,
+    ensureConversation,
+    sendMessage,
+    setPendingTranslate,
+  ]);
 
   // 主模型不支持图像（deepseek）且配了视觉模型时，上传/粘贴图片即刻转写
   const needsTranscribe = () =>
@@ -245,6 +283,34 @@ export function ChatPanel() {
           <SquarePen className="size-4" />
           新对话
         </Button>
+
+        <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+          <button
+            className={cn(
+              "rounded-md px-2.5 py-1 text-xs transition-colors",
+              mode === "chat"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => setMode("chat")}
+            type="button"
+          >
+            对话
+          </button>
+          <button
+            className={cn(
+              "rounded-md px-2.5 py-1 text-xs transition-colors",
+              mode === "translate"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => setMode("translate")}
+            type="button"
+          >
+            翻译
+          </button>
+        </div>
+
         <div className="flex items-center gap-0.5">
           <Button
             aria-label="对话历史"
@@ -363,7 +429,11 @@ export function ChatPanel() {
           onStop={stop}
           onSubmit={handleSend}
           onValueChange={setText}
-          placeholder="问点什么，或在左侧 PDF 划选文本后引用…"
+          placeholder={
+            mode === "translate"
+              ? "翻译模式：在左侧 PDF 划选文本即可翻译"
+              : "问点什么，或在左侧 PDF 划选文本后引用…"
+          }
           showAttachButton={false}
           status={status}
           value={text}

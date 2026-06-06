@@ -54,6 +54,9 @@ interface AppState {
   // PDF 偏好（持久化）
   pdfColorMode: "light" | "sepia" | "dark";
   pdfPinchZoom: boolean;
+  // 右侧模式：对话 / 翻译；翻译模式下左侧划选即自动翻译
+  mode: "chat" | "translate";
+  pendingTranslate: string | null;
 
   openPdf: (file: File) => void;
   closePdf: () => void;
@@ -66,6 +69,8 @@ interface AppState {
   hasApiKey: () => boolean;
   setPdfColorMode: (m: "light" | "sepia" | "dark") => void;
   setPdfPinchZoom: (v: boolean) => void;
+  setMode: (m: "chat" | "translate") => void;
+  setPendingTranslate: (t: string | null) => void;
 
   /** 确保存在当前会话，返回其 id */
   ensureConversation: () => string;
@@ -101,6 +106,8 @@ export const useAppStore = create<AppState>()(
       currentId: null,
       pdfColorMode: "light",
       pdfPinchZoom: false,
+      mode: "chat",
+      pendingTranslate: null,
 
       openPdf: (file) => {
         const prev = get().fileUrl;
@@ -131,6 +138,8 @@ export const useAppStore = create<AppState>()(
       hasApiKey: () => get().settings.apiKey.trim().length > 0,
       setPdfColorMode: (m) => set({ pdfColorMode: m }),
       setPdfPinchZoom: (v) => set({ pdfPinchZoom: v }),
+      setMode: (m) => set({ mode: m }),
+      setPendingTranslate: (t) => set({ pendingTranslate: t }),
 
       ensureConversation: () => {
         const { currentId, conversations } = get();
@@ -180,6 +189,7 @@ export const useAppStore = create<AppState>()(
         currentId: s.currentId,
         pdfColorMode: s.pdfColorMode,
         pdfPinchZoom: s.pdfPinchZoom,
+        mode: s.mode,
       }),
       // 旧数据可能没有 settings.vision，深合并补默认，避免读取报错
       merge: (persisted, current) => {
