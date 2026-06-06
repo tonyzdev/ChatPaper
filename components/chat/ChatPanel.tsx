@@ -286,10 +286,10 @@ export function ChatPanel() {
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-background">
-      {/* header：浮动毛玻璃透明，消息可滚到其下 */}
-      <div className="absolute inset-x-0 top-0 z-10 flex h-12 shrink-0 items-center justify-between bg-background/55 px-2 backdrop-blur-md">
+      {/* header：完全透明，按钮悬浮在内容之上（容器不拦截事件，按钮各自可点） */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex h-12 shrink-0 items-center justify-between px-2">
         <Button
-          className="gap-1.5"
+          className="pointer-events-auto gap-1.5"
           onClick={handleNewChat}
           size="sm"
           variant="ghost"
@@ -298,12 +298,12 @@ export function ChatPanel() {
           新对话
         </Button>
 
-        <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+        <div className="pointer-events-auto flex items-center gap-0.5 rounded-lg bg-muted/80 p-0.5 backdrop-blur-sm">
           <button
             className={cn(
               "rounded-md px-2.5 py-1 text-xs transition-colors",
               mode === "chat"
-                ? "bg-background text-foreground shadow-sm"
+                ? "bg-background text-foreground shadow-sm dark:bg-foreground dark:text-background"
                 : "text-muted-foreground hover:text-foreground",
             )}
             onClick={() => setMode("chat")}
@@ -315,7 +315,7 @@ export function ChatPanel() {
             className={cn(
               "rounded-md px-2.5 py-1 text-xs transition-colors",
               mode === "translate"
-                ? "bg-background text-foreground shadow-sm"
+                ? "bg-background text-foreground shadow-sm dark:bg-foreground dark:text-background"
                 : "text-muted-foreground hover:text-foreground",
             )}
             onClick={() => setMode("translate")}
@@ -325,7 +325,7 @@ export function ChatPanel() {
           </button>
         </div>
 
-        <div className="flex items-center gap-0.5">
+        <div className="pointer-events-auto flex items-center gap-0.5">
           <Button
             aria-label="对话历史"
             onClick={() => setHistoryOpen(true)}
