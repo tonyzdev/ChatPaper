@@ -4,7 +4,13 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
-import { History, MessageSquareText, Settings, SquarePen } from "lucide-react";
+import {
+  History,
+  MessageSquareText,
+  Quote,
+  Settings,
+  SquarePen,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   Conversation,
@@ -26,7 +32,6 @@ import { PromptBox } from "@/components/ui/chatgpt-prompt-input";
 import type { Citation } from "@/lib/types";
 import { useAppStore } from "@/store/useAppStore";
 
-/** 从消息 metadata 取出发送时附带的引用 */
 function getMessageCitations(m: UIMessage): Citation[] | undefined {
   return (m.metadata as { citations?: Citation[] } | undefined)?.citations;
 }
@@ -37,6 +42,7 @@ export function ChatPanel() {
   });
 
   const citations = useAppStore((s) => s.citations);
+  const addCitation = useAppStore((s) => s.addCitation);
   const clearCitations = useAppStore((s) => s.clearCitations);
   const settings = useAppStore((s) => s.settings);
   const conversations = useAppStore((s) => s.conversations);
@@ -49,6 +55,11 @@ export function ChatPanel() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [replyQuote, setReplyQuote] = useState<{
+    text: string;
+    top: number;
+    left: number;
+  } | null>(null);
 
   // 每轮对话结束后把消息写入当前会话
   useEffect(() => {
@@ -76,6 +87,37 @@ export function ChatPanel() {
       for (const a of prev) URL.revokeObjectURL(a.url);
       return [];
     });
+  };
+
+  // 在 AI 回复里划选文本 → 浮钮「引用」
+  const handleReplySelect = () => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) {
+      setReplyQuote(null);
+      return;
+    }
+    const t = sel.toString().trim();
+    const range = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+    if (!t || !range) {
+      setReplyQuote(null);
+      return;
+    }
+    const node = range.commonAncestorContainer;
+    const el =
+      node.nodeType === 1 ? (node as HTMLElement) : node.parentElement;
+    // 仅当选区落在 AI 回复（assistant 气泡）内才提供引用
+    if (!el?.closest(".is-assistant")) {
+      setReplyQuote(null);
+      return;
+    }
+    const r = range.getBoundingClientRect();
+    setReplyQuote({ text: t, top: r.top - 6, left: r.left + r.width / 2 });
+  };
+  const confirmReplyQuote = () => {
+    if (!replyQuote) return;
+    addCitation({ text: replyQuote.text, source: "AI 回复" });
+    window.getSelection()?.removeAllRanges();
+    setReplyQuote(null);
   };
 
   const handleSend = () => {
@@ -157,64 +199,78 @@ export function ChatPanel() {
         </div>
       </div>
 
-      <Conversation>
-        <ConversationContent className="px-5">
-          {messages.length === 0 ? (
-            <ConversationEmptyState
-              description="在左侧 PDF 中划选文本作为引用，然后在下方提问。"
-              icon={<MessageSquareText className="size-8" />}
-              title="开始对话"
-            />
-          ) : (
-            messages.map((m) => {
-              const msgCitations = getMessageCitations(m);
-              return (
-                <Message from={m.role} key={m.id}>
-                  <MessageContent>
-                    {m.role === "user" && msgCitations?.length ? (
-                      <MessageCitations citations={msgCitations} />
-                    ) : null}
-                    {m.parts.map((part, i) => {
-                      if (part.type === "text") {
-                        return (
-                          <MessageResponse key={`${m.id}-${i}`}>
-                            {part.text}
-                          </MessageResponse>
-                        );
-                      }
-                      if (
-                        part.type === "file" &&
-                        part.mediaType?.startsWith("image/")
-                      ) {
-                        return (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            alt={part.filename ?? "附件图片"}
-                            className="max-w-xs rounded-lg border"
-                            key={`${m.id}-${i}`}
-                            src={part.url}
-                          />
-                        );
-                      }
-                      return null;
-                    })}
-                  </MessageContent>
-                </Message>
-              );
-            })
-          )}
+      {/* 消息区：在 AI 回复里划选可引用 */}
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        onMouseUp={handleReplySelect}
+      >
+        <Conversation>
+          <ConversationContent className="px-5">
+            {messages.length === 0 ? (
+              <ConversationEmptyState
+                description="在左侧 PDF 中划选文本作为引用，然后在下方提问。"
+                icon={<MessageSquareText className="size-8" />}
+                title="开始对话"
+              />
+            ) : (
+              messages.map((m) => {
+                const msgCitations = getMessageCitations(m);
+                return (
+                  <Message from={m.role} key={m.id}>
+                    <MessageContent>
+                      {m.role === "user" && msgCitations?.length ? (
+                        <MessageCitations citations={msgCitations} />
+                      ) : null}
+                      {m.parts.map((part, i) => {
+                        if (part.type === "text") {
+                          return (
+                            <MessageResponse key={`${m.id}-${i}`}>
+                              {part.text}
+                            </MessageResponse>
+                          );
+                        }
+                        if (
+                          part.type === "file" &&
+                          part.mediaType?.startsWith("image/")
+                        ) {
+                          return (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              alt={part.filename ?? "附件图片"}
+                              className="max-w-xs rounded-lg border"
+                              key={`${m.id}-${i}`}
+                              src={part.url}
+                            />
+                          );
+                        }
+                        return null;
+                      })}
+                      {/* 流式开始但首字未到时，气泡内继续显示 loading，避免空档 */}
+                      {m.role === "assistant" &&
+                      !m.parts.some(
+                        (p) =>
+                          (p.type === "text" && p.text.length > 0) ||
+                          p.type === "file",
+                      ) ? (
+                        <ThinkingDots />
+                      ) : null}
+                    </MessageContent>
+                  </Message>
+                );
+              })
+            )}
 
-          {/* 等待首字时的「思考中」动效 */}
-          {status === "submitted" ? (
-            <Message from="assistant">
-              <MessageContent>
-                <ThinkingDots />
-              </MessageContent>
-            </Message>
-          ) : null}
-        </ConversationContent>
-        <ConversationScrollButton />
-      </Conversation>
+            {status === "submitted" && messages.at(-1)?.role !== "assistant" ? (
+              <Message from="assistant">
+                <MessageContent>
+                  <ThinkingDots />
+                </MessageContent>
+              </Message>
+            ) : null}
+          </ConversationContent>
+          <ConversationScrollButton />
+        </Conversation>
+      </div>
 
       <div className="shrink-0 px-5 pb-3 pt-1">
         <PromptBox
@@ -245,11 +301,29 @@ export function ChatPanel() {
         onSelect={handleSelectConversation}
         open={historyOpen}
       />
+
+      {/* 划选 AI 回复后的「引用」浮钮 */}
+      {replyQuote ? (
+        <div
+          className="-translate-x-1/2 -translate-y-full fixed z-50"
+          style={{ top: replyQuote.top, left: replyQuote.left }}
+        >
+          <Button
+            className="shadow-lg"
+            onClick={confirmReplyQuote}
+            onMouseDown={(e) => e.preventDefault()}
+            size="sm"
+          >
+            <Quote className="size-3.5" />
+            引用
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-/** 用户气泡里显示这条消息引用了哪些 PDF 片段 */
+/** 用户气泡里显示这条消息引用了哪些来源 */
 function MessageCitations({ citations }: { citations: Citation[] }) {
   return (
     <div className="mb-1.5 flex flex-col gap-1">
@@ -262,7 +336,7 @@ function MessageCitations({ citations }: { citations: Citation[] }) {
             {c.text}
           </span>
           <span className="shrink-0 text-[11px] text-muted-foreground/60">
-            第 {c.page} 页
+            {c.page != null ? `第 ${c.page} 页` : c.source}
           </span>
         </div>
       ))}

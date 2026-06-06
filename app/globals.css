@@ -146,7 +146,7 @@ body {
 /* PDF 文字选区高亮 */
 .textLayer ::selection,
 .react-pdf__Page__textContent span::selection {
-  background: color-mix(in srgb, var(--primary) 28%, transparent);
+  background: color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
 /* react-pdf 页面外观干净稳定 */

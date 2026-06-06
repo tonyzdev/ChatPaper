@@ -3,9 +3,9 @@ export interface Citation {
   id: string;
   /** 选中的文本内容 */
   text: string;
-  /** 所在页码（从 1 开始） */
-  page: number;
-  /** 来源 PDF 文件名 */
+  /** 所在页码（从 1 开始）；来自 AI 回复的引用没有页码 */
+  page?: number;
+  /** 来源：PDF 文件名，或「AI 回复」 */
   source: string;
 }
 

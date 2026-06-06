@@ -85,6 +85,26 @@ export function PromptBox({
     }
   };
 
+  // 支持 Ctrl/Cmd+V 直接粘贴图片/文件到输入框
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!onAttachFiles) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (const it of items) {
+      if (it.kind === "file") {
+        const f = it.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length > 0) {
+      e.preventDefault();
+      const dt = new DataTransfer();
+      for (const f of files) dt.items.add(f);
+      onAttachFiles(dt.files);
+    }
+  };
+
   return (
     // biome-ignore lint/a11y: 容器点击聚焦输入框是输入框的常规交互
     <div
@@ -114,6 +134,7 @@ export function PromptBox({
         className="w-full resize-none overflow-y-auto border-0 bg-transparent p-3 text-[0.95rem] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus:ring-0 focus-visible:outline-none"
         onChange={(e) => onValueChange(e.target.value)}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         placeholder={placeholder}
         ref={textareaRef}
         rows={1}

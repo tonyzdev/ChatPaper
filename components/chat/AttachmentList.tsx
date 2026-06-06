@@ -37,7 +37,7 @@ export function AttachmentList({
             )}
             <button
               aria-label="移除附件"
-              className="-top-1.5 -right-1.5 absolute flex size-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+              className="-top-1.5 -right-1.5 absolute flex size-5 items-center justify-center rounded-full border bg-background text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground group-hover:opacity-100"
               onClick={() => onRemove(i)}
               type="button"
             >

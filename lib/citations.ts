@@ -23,7 +23,8 @@ export function buildCitationBlock(
     const c = citations[i];
     const text =
       c.text.length > 4000 ? `${c.text.slice(0, 4000)}…（已截断）` : c.text;
-    const block = `（第 ${c.page} 页）${text}`;
+    const label = c.page != null ? `第 ${c.page} 页` : c.source;
+    const block = `（${label}）${text}`;
     if (used + block.length > charBudget) {
       blocks.push(`（其余 ${citations.length - i} 条引用因长度限制已省略）`);
       break;

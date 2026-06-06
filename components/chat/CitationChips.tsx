@@ -20,7 +20,7 @@ export function CitationChips() {
             {c.text}
           </span>
           <span className="shrink-0 text-[11px] text-muted-foreground/60">
-            第 {c.page} 页
+            {c.page != null ? `第 ${c.page} 页` : c.source}
           </span>
           <button
             aria-label="移除引用"
