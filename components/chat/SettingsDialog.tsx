@@ -18,26 +18,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { type Provider, useAppStore } from "@/store/useAppStore";
+import { type Provider, useAppStore, type VisionSettings } from "@/store/useAppStore";
 
 const MODEL_PRESETS: Record<Provider, string[]> = {
   anthropic: ["claude-sonnet-4-5", "claude-opus-4-1"],
   deepseek: ["deepseek-v4-flash", "deepseek-v4-pro"],
   openai: ["gpt-4o", "gpt-4o-mini"],
 };
-
 const MODEL_HINT: Record<Provider, string> = {
   anthropic: "claude-sonnet-4-5",
   deepseek: "deepseek-v4-flash",
   openai: "gpt-4o-mini",
 };
-
 const KEY_HINT: Record<Provider, string> = {
   anthropic: "sk-ant-…",
   deepseek: "sk-…",
   openai: "sk-…",
 };
+const VISION_PRESETS = ["qwen3-vl-flash", "qwen3-vl-plus"];
+
+type TestState = { status: "idle" | "testing" | "ok" | "fail"; msg?: string };
 
 export function SettingsDialog({
   open,
@@ -52,23 +54,55 @@ export function SettingsDialog({
   const [provider, setProvider] = useState<Provider>(settings.provider);
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [model, setModel] = useState(settings.model);
+  const [vision, setVision] = useState<VisionSettings>(settings.vision);
+  const [test, setTest] = useState<TestState>({ status: "idle" });
 
   useEffect(() => {
     if (open) {
       setProvider(settings.provider);
       setApiKey(settings.apiKey);
       setModel(settings.model);
+      setVision(settings.vision);
+      setTest({ status: "idle" });
     }
   }, [open, settings]);
 
   const save = () => {
-    setSettings({ provider, apiKey: apiKey.trim(), model: model.trim() });
+    setSettings({
+      provider,
+      apiKey: apiKey.trim(),
+      model: model.trim(),
+      vision: { ...vision, apiKey: vision.apiKey.trim(), model: vision.model.trim() },
+    });
     onOpenChange(false);
+  };
+
+  const testVision = async () => {
+    setTest({ status: "testing" });
+    try {
+      const res = await fetch("/api/test-vision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiKey: vision.apiKey,
+          model: vision.model,
+          baseURL: vision.baseURL,
+        }),
+      });
+      const data = (await res.json()) as { ok: boolean; sample?: string; error?: string };
+      setTest(
+        data.ok
+          ? { status: "ok", msg: data.sample || "连接成功，可识别图像" }
+          : { status: "fail", msg: data.error || "测试失败" },
+      );
+    } catch (e) {
+      setTest({ status: "fail", msg: e instanceof Error ? e.message : String(e) });
+    }
   };
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>设置</DialogTitle>
           <DialogDescription>
@@ -76,12 +110,9 @@ export function SettingsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 py-1">
+        <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto py-1">
           <Field label="模型提供商">
-            <Select
-              onValueChange={(v) => setProvider(v as Provider)}
-              value={provider}
-            >
+            <Select onValueChange={(v) => setProvider(v as Provider)} value={provider}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -112,25 +143,91 @@ export function SettingsDialog({
             />
             <div className="flex flex-wrap gap-1.5 pt-1.5">
               {MODEL_PRESETS[provider].map((mm) => (
-                <button
-                  className={cn(
-                    "rounded-md border px-2 py-0.5 text-xs transition-colors",
-                    model === mm
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-accent",
-                  )}
-                  key={mm}
-                  onClick={() => setModel(mm)}
-                  type="button"
-                >
+                <Preset key={mm} active={model === mm} onClick={() => setModel(mm)}>
                   {mm}
-                </button>
+                </Preset>
               ))}
             </div>
           </Field>
 
-          <p className="text-xs text-muted-foreground">
-            获取 Key：Anthropic → console.anthropic.com ；DeepSeek → platform.deepseek.com ；OpenAI → platform.openai.com
+          {/* 图像转写（给不支持图像的模型，如 DeepSeek） */}
+          <div className="flex flex-col gap-2.5 rounded-lg border p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-col">
+                <span className="font-medium text-sm">图像转写</span>
+                <span className="text-muted-foreground text-xs">
+                  DeepSeek 等不支持图像的模型，先用视觉模型把图转成文字再喂给它
+                </span>
+              </div>
+              <Switch
+                checked={vision.enabled}
+                onCheckedChange={(c) => setVision((v) => ({ ...v, enabled: c }))}
+              />
+            </div>
+
+            {vision.enabled ? (
+              <div className="flex flex-col gap-2.5 border-t pt-2.5">
+                <Field label="视觉模型 API Key">
+                  <Input
+                    autoComplete="off"
+                    onChange={(e) => setVision((v) => ({ ...v, apiKey: e.target.value }))}
+                    placeholder="Qwen（DashScope）sk-…"
+                    type="password"
+                    value={vision.apiKey}
+                  />
+                </Field>
+                <Field label="视觉模型">
+                  <Input
+                    autoComplete="off"
+                    onChange={(e) => setVision((v) => ({ ...v, model: e.target.value }))}
+                    placeholder="qwen3-vl-flash"
+                    value={vision.model}
+                  />
+                  <div className="flex flex-wrap gap-1.5 pt-1.5">
+                    {VISION_PRESETS.map((mm) => (
+                      <Preset
+                        active={vision.model === mm}
+                        key={mm}
+                        onClick={() => setVision((v) => ({ ...v, model: mm }))}
+                      >
+                        {mm}
+                      </Preset>
+                    ))}
+                  </div>
+                </Field>
+                <Field label="Base URL">
+                  <Input
+                    autoComplete="off"
+                    onChange={(e) => setVision((v) => ({ ...v, baseURL: e.target.value }))}
+                    placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
+                    value={vision.baseURL}
+                  />
+                </Field>
+                <div className="flex items-center gap-2">
+                  <Button
+                    disabled={!vision.apiKey.trim() || test.status === "testing"}
+                    onClick={testVision}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {test.status === "testing" ? "测试中…" : "测试连接"}
+                  </Button>
+                  {test.status === "ok" ? (
+                    <span className="line-clamp-1 text-green-600 text-xs">✓ 可用</span>
+                  ) : null}
+                  {test.status === "fail" ? (
+                    <span className="line-clamp-1 text-destructive text-xs" title={test.msg}>
+                      ✗ {test.msg}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <p className="text-muted-foreground text-xs">
+            获取 Key：Anthropic → console.anthropic.com ；DeepSeek → platform.deepseek.com ；OpenAI → platform.openai.com ；Qwen → bailian.console.aliyun.com
           </p>
         </div>
 
@@ -159,5 +256,30 @@ function Field({
       <span className="font-medium text-muted-foreground text-xs">{label}</span>
       {children}
     </div>
+  );
+}
+
+function Preset({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      className={cn(
+        "rounded-md border px-2 py-0.5 text-xs transition-colors",
+        active
+          ? "border-primary bg-primary/10 text-primary"
+          : "text-muted-foreground hover:bg-accent",
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      {children}
+    </button>
   );
 }

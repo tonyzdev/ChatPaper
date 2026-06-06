@@ -5,11 +5,20 @@ import type { Citation } from "@/lib/types";
 
 export type Provider = "anthropic" | "openai" | "deepseek";
 
+export interface VisionSettings {
+  /** 主模型不支持图像时，用此视觉模型先把图转成文本再喂主模型 */
+  enabled: boolean;
+  apiKey: string;
+  model: string;
+  baseURL: string;
+}
+
 export interface Settings {
   provider: Provider;
   apiKey: string;
   /** 留空则用各 provider 的默认模型 */
   model: string;
+  vision: VisionSettings;
 }
 
 export interface Conversation {
@@ -69,7 +78,17 @@ export const useAppStore = create<AppState>()(
       numPages: 0,
       citations: [],
 
-      settings: { provider: "anthropic", apiKey: "", model: "" },
+      settings: {
+        provider: "anthropic",
+        apiKey: "",
+        model: "",
+        vision: {
+          enabled: false,
+          apiKey: "",
+          model: "qwen3-vl-flash",
+          baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        },
+      },
       conversations: [],
       currentId: null,
 
@@ -148,6 +167,22 @@ export const useAppStore = create<AppState>()(
         conversations: s.conversations,
         currentId: s.currentId,
       }),
+      // 旧数据可能没有 settings.vision，深合并补默认，避免读取报错
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<AppState>;
+        return {
+          ...current,
+          ...p,
+          settings: {
+            ...current.settings,
+            ...(p.settings ?? {}),
+            vision: {
+              ...current.settings.vision,
+              ...(p.settings?.vision ?? {}),
+            },
+          },
+        };
+      },
       storage: createJSONStorage(() =>
         typeof window !== "undefined"
           ? window.localStorage

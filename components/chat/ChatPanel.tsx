@@ -149,6 +149,7 @@ export function ChatPanel() {
           provider: settings.provider,
           apiKey: settings.apiKey,
           model: settings.model,
+          vision: settings.vision,
         },
       },
     );
