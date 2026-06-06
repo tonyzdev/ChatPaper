@@ -286,8 +286,8 @@ export function ChatPanel() {
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-background">
-      {/* header：完全透明，按钮悬浮在内容之上（容器不拦截事件，按钮各自可点） */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex h-12 shrink-0 items-center justify-between px-2">
+      {/* header：半透明毛玻璃，消息可滚到其下 */}
+      <div className="absolute inset-x-0 top-0 z-10 flex h-12 shrink-0 items-center justify-between bg-background/55 px-2 backdrop-blur-md">
         <Button
           className="pointer-events-auto gap-1.5"
           onClick={handleNewChat}
@@ -424,7 +424,8 @@ export function ChatPanel() {
         </Conversation>
       </div>
 
-      <div className="shrink-0 px-5 pt-1 pb-3">
+      {mode === "chat" ? (
+        <div className="shrink-0 px-5 pt-1 pb-3">
         <PromptBox
           disabled={transcribing}
           extraContent={hasExtra}
@@ -443,16 +444,17 @@ export function ChatPanel() {
           onStop={stop}
           onSubmit={handleSend}
           onValueChange={setText}
-          placeholder={
-            mode === "translate"
-              ? "翻译模式：在左侧 PDF 划选文本即可翻译"
-              : "问点什么，或在左侧 PDF 划选文本后引用…"
-          }
+          placeholder="问点什么，或在左侧 PDF 划选文本后引用…"
           showAttachButton={false}
           status={status}
           value={text}
         />
-      </div>
+        </div>
+      ) : (
+        <div className="shrink-0 px-5 pt-2 pb-4 text-center text-muted-foreground text-xs">
+          翻译模式：在左侧 PDF 划选文本即可自动翻译
+        </div>
+      )}
 
       <SettingsDialog onOpenChange={setSettingsOpen} open={settingsOpen} />
       <HistoryDialog
