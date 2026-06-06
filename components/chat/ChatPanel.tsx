@@ -1,8 +1,9 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { DefaultChatTransport, type UIMessage } from "ai";
 import "katex/dist/katex.min.css";
+import "streamdown/styles.css";
 import { History, MessageSquareText, Settings, SquarePen } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -22,7 +23,13 @@ import { HistoryDialog } from "@/components/chat/HistoryDialog";
 import { SettingsDialog } from "@/components/chat/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import { PromptBox } from "@/components/ui/chatgpt-prompt-input";
+import type { Citation } from "@/lib/types";
 import { useAppStore } from "@/store/useAppStore";
+
+/** 从消息 metadata 取出发送时附带的引用 */
+function getMessageCitations(m: UIMessage): Citation[] | undefined {
+  return (m.metadata as { citations?: Citation[] } | undefined)?.citations;
+}
 
 export function ChatPanel() {
   const { messages, sendMessage, status, stop, setMessages } = useChat({
@@ -72,7 +79,6 @@ export function ChatPanel() {
   };
 
   const handleSend = () => {
-    // 未配置 API Key → 打开设置弹窗
     if (!settings.apiKey.trim()) {
       setSettingsOpen(true);
       return;
@@ -87,12 +93,17 @@ export function ChatPanel() {
       files = dt.files;
     }
 
+    const sentCitations = citations;
     ensureConversation();
     sendMessage(
-      { text: t || "请结合我提供的图片/引用进行说明。", files },
+      {
+        text: t || "请结合我提供的图片/引用进行说明。",
+        files,
+        metadata: sentCitations.length ? { citations: sentCitations } : undefined,
+      },
       {
         body: {
-          citations,
+          citations: sentCitations,
           provider: settings.provider,
           apiKey: settings.apiKey,
           model: settings.model,
@@ -155,37 +166,52 @@ export function ChatPanel() {
               title="开始对话"
             />
           ) : (
-            messages.map((m) => (
-              <Message from={m.role} key={m.id}>
-                <MessageContent>
-                  {m.parts.map((part, i) => {
-                    if (part.type === "text") {
-                      return (
-                        <MessageResponse key={`${m.id}-${i}`}>
-                          {part.text}
-                        </MessageResponse>
-                      );
-                    }
-                    if (
-                      part.type === "file" &&
-                      part.mediaType?.startsWith("image/")
-                    ) {
-                      return (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          alt={part.filename ?? "附件图片"}
-                          className="max-w-xs rounded-lg border"
-                          key={`${m.id}-${i}`}
-                          src={part.url}
-                        />
-                      );
-                    }
-                    return null;
-                  })}
-                </MessageContent>
-              </Message>
-            ))
+            messages.map((m) => {
+              const msgCitations = getMessageCitations(m);
+              return (
+                <Message from={m.role} key={m.id}>
+                  <MessageContent>
+                    {m.role === "user" && msgCitations?.length ? (
+                      <MessageCitations citations={msgCitations} />
+                    ) : null}
+                    {m.parts.map((part, i) => {
+                      if (part.type === "text") {
+                        return (
+                          <MessageResponse key={`${m.id}-${i}`}>
+                            {part.text}
+                          </MessageResponse>
+                        );
+                      }
+                      if (
+                        part.type === "file" &&
+                        part.mediaType?.startsWith("image/")
+                      ) {
+                        return (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            alt={part.filename ?? "附件图片"}
+                            className="max-w-xs rounded-lg border"
+                            key={`${m.id}-${i}`}
+                            src={part.url}
+                          />
+                        );
+                      }
+                      return null;
+                    })}
+                  </MessageContent>
+                </Message>
+              );
+            })
           )}
+
+          {/* 等待首字时的「思考中」动效 */}
+          {status === "submitted" ? (
+            <Message from="assistant">
+              <MessageContent>
+                <ThinkingDots />
+              </MessageContent>
+            </Message>
+          ) : null}
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
@@ -219,6 +245,35 @@ export function ChatPanel() {
         onSelect={handleSelectConversation}
         open={historyOpen}
       />
+    </div>
+  );
+}
+
+/** 用户气泡里显示这条消息引用了哪些 PDF 片段 */
+function MessageCitations({ citations }: { citations: Citation[] }) {
+  return (
+    <div className="mb-1 flex flex-wrap gap-1">
+      {citations.map((c) => (
+        <span
+          className="inline-flex max-w-[16rem] items-center gap-1 rounded-md border bg-background/60 px-1.5 py-0.5 text-xs"
+          key={c.id}
+        >
+          <span className="shrink-0 rounded bg-primary/10 px-1 font-medium text-primary">
+            p.{c.page}
+          </span>
+          <span className="truncate text-muted-foreground">{c.text}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ThinkingDots() {
+  return (
+    <div className="flex items-center gap-1 py-1">
+      <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.3s]" />
+      <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.15s]" />
+      <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" />
     </div>
   );
 }
