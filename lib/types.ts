@@ -1,0 +1,15 @@
+/** 用户从 PDF 中划选、加入对话的一段引用 */
+export interface Citation {
+  id: string;
+  /** 选中的文本内容 */
+  text: string;
+  /** 所在页码（从 1 开始） */
+  page: number;
+  /** 来源 PDF 文件名 */
+  source: string;
+}
+
+/** 前端随消息发给 /api/chat 的额外字段 */
+export interface ChatRequestBody {
+  citations?: Citation[];
+}
