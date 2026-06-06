@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { Citation } from "@/lib/types";
 
-export type Provider = "anthropic" | "openai";
+export type Provider = "anthropic" | "openai" | "deepseek";
 
 export interface Settings {
   provider: Provider;

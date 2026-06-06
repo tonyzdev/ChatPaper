@@ -69,6 +69,7 @@ export function SettingsDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="anthropic">Anthropic（Claude）</SelectItem>
+                <SelectItem value="deepseek">DeepSeek</SelectItem>
                 <SelectItem value="openai">OpenAI（GPT）</SelectItem>
               </SelectContent>
             </Select>
@@ -89,14 +90,18 @@ export function SettingsDialog({
               autoComplete="off"
               onChange={(e) => setModel(e.target.value)}
               placeholder={
-                provider === "anthropic" ? "claude-sonnet-4-5" : "gpt-4o-mini"
+                provider === "anthropic"
+                  ? "claude-sonnet-4-5"
+                  : provider === "deepseek"
+                    ? "deepseek-chat"
+                    : "gpt-4o-mini"
               }
               value={model}
             />
           </Field>
 
           <p className="text-xs text-muted-foreground">
-            获取 Key：Anthropic → console.anthropic.com ；OpenAI → platform.openai.com
+            获取 Key：Anthropic → console.anthropic.com ；DeepSeek → platform.deepseek.com ；OpenAI → platform.openai.com
           </p>
         </div>
 
