@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -52,6 +52,18 @@ export function SettingsDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent className="sm:max-w-md">
+        {/* DialogContent 关闭时随 Portal 卸载、打开时重新挂载，所以把表单拆成子组件后，
+            每次打开都会用 useState 初始值重新读入当前设置 —— 无需在 effect 内同步 setState。 */}
+        <SettingsForm onClose={() => onOpenChange(false)} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SettingsForm({ onClose }: { onClose: () => void }) {
   const settings = useAppStore((s) => s.settings);
   const setSettings = useAppStore((s) => s.setSettings);
 
@@ -63,18 +75,6 @@ export function SettingsDialog({
   const [thinking, setThinking] = useState(settings.deepseekThinking);
   const [test, setTest] = useState<TestState>({ status: "idle" });
 
-  useEffect(() => {
-    if (open) {
-      setProvider(settings.provider);
-      setApiKey(settings.apiKey);
-      setBaseURL(settings.baseURL);
-      setModel(settings.model);
-      setVision(settings.vision);
-      setThinking(settings.deepseekThinking);
-      setTest({ status: "idle" });
-    }
-  }, [open, settings]);
-
   const save = () => {
     setSettings({
       provider,
@@ -84,7 +84,7 @@ export function SettingsDialog({
       vision: { ...vision, apiKey: vision.apiKey.trim(), model: vision.model.trim() },
       deepseekThinking: thinking,
     });
-    onOpenChange(false);
+    onClose();
   };
 
   const testVision = async () => {
@@ -111,169 +111,167 @@ export function SettingsDialog({
   };
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>设置</DialogTitle>
-          <DialogDescription>
-            填入你的 API Key —— 仅保存在本地浏览器，随请求直发到模型，不经第三方存储。
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <DialogHeader>
+        <DialogTitle>设置</DialogTitle>
+        <DialogDescription>
+          填入你的 API Key —— 仅保存在本地浏览器，随请求直发到模型，不经第三方存储。
+        </DialogDescription>
+      </DialogHeader>
 
-        <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto py-1">
-          <Field label="模型提供商">
-            <Select onValueChange={(v) => setProvider(v as Provider)} value={provider}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="anthropic">Anthropic（Claude）</SelectItem>
-                <SelectItem value="deepseek">DeepSeek</SelectItem>
-                <SelectItem value="openai">OpenAI（GPT）</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
+      <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto py-1">
+        <Field label="模型提供商">
+          <Select onValueChange={(v) => setProvider(v as Provider)} value={provider}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="anthropic">Anthropic（Claude）</SelectItem>
+              <SelectItem value="deepseek">DeepSeek</SelectItem>
+              <SelectItem value="openai">OpenAI（GPT）</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
 
-          <Field label="API Key">
+        <Field label="API Key">
+          <Input
+            autoComplete="off"
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={KEY_HINT[provider]}
+            type="password"
+            value={apiKey}
+          />
+        </Field>
+
+        <Field label="模型（点选常用，或手动输入；留空用默认）">
+          <Input
+            autoComplete="off"
+            onChange={(e) => setModel(e.target.value)}
+            placeholder={MODEL_HINT[provider]}
+            value={model}
+          />
+          <div className="flex flex-wrap gap-1.5 pt-1.5">
+            {MODEL_PRESETS[provider].map((mm) => (
+              <Preset key={mm} active={model === mm} onClick={() => setModel(mm)}>
+                {mm}
+              </Preset>
+            ))}
+          </div>
+        </Field>
+
+        {provider === "anthropic" || provider === "openai" ? (
+          <Field label="Base URL（兼容接口；留空使用官方默认）">
             <Input
               autoComplete="off"
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={KEY_HINT[provider]}
-              type="password"
-              value={apiKey}
+              onChange={(e) => setBaseURL(e.target.value)}
+              placeholder={BASE_URL_HINT[provider]}
+              value={baseURL}
             />
           </Field>
+        ) : null}
 
-          <Field label="模型（点选常用，或手动输入；留空用默认）">
-            <Input
-              autoComplete="off"
-              onChange={(e) => setModel(e.target.value)}
-              placeholder={MODEL_HINT[provider]}
-              value={model}
+        {provider === "deepseek" ? (
+          <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
+            <div className="flex flex-col">
+              <span className="font-medium text-sm">推理模式（思考）</span>
+              <span className="text-muted-foreground text-xs">
+                开启后 DeepSeek 先思考再作答并展示思考过程（更慢，默认关）
+              </span>
+            </div>
+            <Switch checked={thinking} onCheckedChange={setThinking} />
+          </div>
+        ) : null}
+
+        {/* 图像转写（给不支持图像的模型，如 DeepSeek） */}
+        <div className="flex flex-col gap-2.5 rounded-lg border p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col">
+              <span className="font-medium text-sm">图像转写</span>
+              <span className="text-muted-foreground text-xs">
+                DeepSeek 等不支持图像的模型，先用视觉模型把图转成文字再加入上下文
+              </span>
+            </div>
+            <Switch
+              checked={vision.enabled}
+              onCheckedChange={(c) => setVision((v) => ({ ...v, enabled: c }))}
             />
-            <div className="flex flex-wrap gap-1.5 pt-1.5">
-              {MODEL_PRESETS[provider].map((mm) => (
-                <Preset key={mm} active={model === mm} onClick={() => setModel(mm)}>
-                  {mm}
-                </Preset>
-              ))}
-            </div>
-          </Field>
-
-          {provider === "anthropic" || provider === "openai" ? (
-            <Field label="Base URL（兼容接口；留空使用官方默认）">
-              <Input
-                autoComplete="off"
-                onChange={(e) => setBaseURL(e.target.value)}
-                placeholder={BASE_URL_HINT[provider]}
-                value={baseURL}
-              />
-            </Field>
-          ) : null}
-
-          {provider === "deepseek" ? (
-            <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
-              <div className="flex flex-col">
-                <span className="font-medium text-sm">推理模式（思考）</span>
-                <span className="text-muted-foreground text-xs">
-                  开启后 DeepSeek 先思考再作答并展示思考过程（更慢，默认关）
-                </span>
-              </div>
-              <Switch checked={thinking} onCheckedChange={setThinking} />
-            </div>
-          ) : null}
-
-          {/* 图像转写（给不支持图像的模型，如 DeepSeek） */}
-          <div className="flex flex-col gap-2.5 rounded-lg border p-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex flex-col">
-                <span className="font-medium text-sm">图像转写</span>
-                <span className="text-muted-foreground text-xs">
-                  DeepSeek 等不支持图像的模型，先用视觉模型把图转成文字再加入上下文
-                </span>
-              </div>
-              <Switch
-                checked={vision.enabled}
-                onCheckedChange={(c) => setVision((v) => ({ ...v, enabled: c }))}
-              />
-            </div>
-
-            {vision.enabled ? (
-              <div className="flex flex-col gap-2.5 border-t pt-2.5">
-                <Field label="视觉模型 API Key">
-                  <Input
-                    autoComplete="off"
-                    onChange={(e) => setVision((v) => ({ ...v, apiKey: e.target.value }))}
-                    placeholder="Qwen（DashScope）sk-…"
-                    type="password"
-                    value={vision.apiKey}
-                  />
-                </Field>
-                <Field label="视觉模型">
-                  <Input
-                    autoComplete="off"
-                    onChange={(e) => setVision((v) => ({ ...v, model: e.target.value }))}
-                    placeholder="qwen3-vl-flash"
-                    value={vision.model}
-                  />
-                  <div className="flex flex-wrap gap-1.5 pt-1.5">
-                    {VISION_PRESETS.map((mm) => (
-                      <Preset
-                        active={vision.model === mm}
-                        key={mm}
-                        onClick={() => setVision((v) => ({ ...v, model: mm }))}
-                      >
-                        {mm}
-                      </Preset>
-                    ))}
-                  </div>
-                </Field>
-                <Field label="Base URL">
-                  <Input
-                    autoComplete="off"
-                    onChange={(e) => setVision((v) => ({ ...v, baseURL: e.target.value }))}
-                    placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
-                    value={vision.baseURL}
-                  />
-                </Field>
-                <div className="flex items-center gap-2">
-                  <Button
-                    disabled={!vision.apiKey.trim() || test.status === "testing"}
-                    onClick={testVision}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    {test.status === "testing" ? "测试中…" : "测试连接"}
-                  </Button>
-                  {test.status === "ok" ? (
-                    <span className="line-clamp-1 text-green-600 text-xs">✓ 可用</span>
-                  ) : null}
-                  {test.status === "fail" ? (
-                    <span className="line-clamp-1 text-destructive text-xs" title={test.msg}>
-                      ✗ {test.msg}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
           </div>
 
-          <p className="text-muted-foreground text-xs">
-            获取 Key：Anthropic → console.anthropic.com ；DeepSeek → platform.deepseek.com ；OpenAI → platform.openai.com ；Qwen → bailian.console.aliyun.com
-          </p>
+          {vision.enabled ? (
+            <div className="flex flex-col gap-2.5 border-t pt-2.5">
+              <Field label="视觉模型 API Key">
+                <Input
+                  autoComplete="off"
+                  onChange={(e) => setVision((v) => ({ ...v, apiKey: e.target.value }))}
+                  placeholder="Qwen（DashScope）sk-…"
+                  type="password"
+                  value={vision.apiKey}
+                />
+              </Field>
+              <Field label="视觉模型">
+                <Input
+                  autoComplete="off"
+                  onChange={(e) => setVision((v) => ({ ...v, model: e.target.value }))}
+                  placeholder="qwen3-vl-flash"
+                  value={vision.model}
+                />
+                <div className="flex flex-wrap gap-1.5 pt-1.5">
+                  {VISION_PRESETS.map((mm) => (
+                    <Preset
+                      active={vision.model === mm}
+                      key={mm}
+                      onClick={() => setVision((v) => ({ ...v, model: mm }))}
+                    >
+                      {mm}
+                    </Preset>
+                  ))}
+                </div>
+              </Field>
+              <Field label="Base URL">
+                <Input
+                  autoComplete="off"
+                  onChange={(e) => setVision((v) => ({ ...v, baseURL: e.target.value }))}
+                  placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
+                  value={vision.baseURL}
+                />
+              </Field>
+              <div className="flex items-center gap-2">
+                <Button
+                  disabled={!vision.apiKey.trim() || test.status === "testing"}
+                  onClick={testVision}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {test.status === "testing" ? "测试中…" : "测试连接"}
+                </Button>
+                {test.status === "ok" ? (
+                  <span className="line-clamp-1 text-green-600 text-xs">✓ 可用</span>
+                ) : null}
+                {test.status === "fail" ? (
+                  <span className="line-clamp-1 text-destructive text-xs" title={test.msg}>
+                    ✗ {test.msg}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </div>
 
-        <DialogFooter>
-          <Button onClick={() => onOpenChange(false)} variant="outline">
-            取消
-          </Button>
-          <Button disabled={!apiKey.trim()} onClick={save}>
-            保存
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <p className="text-muted-foreground text-xs">
+          获取 Key：Anthropic → console.anthropic.com ；DeepSeek → platform.deepseek.com ；OpenAI → platform.openai.com ；Qwen → bailian.console.aliyun.com
+        </p>
+      </div>
+
+      <DialogFooter>
+        <Button onClick={onClose} variant="outline">
+          取消
+        </Button>
+        <Button disabled={!apiKey.trim()} onClick={save}>
+          保存
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 
