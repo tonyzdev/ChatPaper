@@ -96,7 +96,30 @@ export function ChatPanel() {
       if (!txt || txt === prev.pendingTranslate) return;
       if (state.mode !== "translate") return;
       setPendingTranslate(null);
-      if (!settings.apiKey.trim()) {
+      const translationSettings = settings.translation.useMainModel
+        ? {
+            provider: settings.provider,
+            apiKey: settings.apiKey,
+            baseURL: settings.baseURL,
+            model: settings.model,
+            deepseekThinking: settings.deepseekThinking,
+          }
+        : {
+            provider: settings.translation.provider,
+            apiKey:
+              settings.translation.apiKey.trim() ||
+              (settings.translation.provider === settings.provider
+                ? settings.apiKey
+                : ""),
+            baseURL:
+              settings.translation.baseURL.trim() ||
+              (settings.translation.provider === settings.provider
+                ? settings.baseURL
+                : ""),
+            model: settings.translation.model,
+            deepseekThinking: settings.translation.deepseekThinking,
+          };
+      if (!translationSettings.apiKey.trim()) {
         setSettingsOpen(true);
         return;
       }
@@ -107,11 +130,14 @@ export function ChatPanel() {
         },
         {
           body: {
-            provider: settings.provider,
-            apiKey: settings.apiKey,
-            baseURL: settings.baseURL,
-            model: settings.model,
-            deepseekThinking: settings.deepseekThinking,
+            provider: translationSettings.provider,
+            apiKey: translationSettings.apiKey,
+            baseURL: translationSettings.baseURL,
+            model: translationSettings.model,
+            deepseekThinking:
+              translationSettings.provider === "deepseek"
+                ? translationSettings.deepseekThinking
+                : false,
           },
         },
       );

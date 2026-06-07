@@ -13,7 +13,7 @@
 - 📄 **双栏布局**：左侧 PDF 阅读器 + 右侧 AI 对话，可拖拽调整宽度，整页固定不滚动，仅内部面板滚动。
 - ✂️ **划选即引用**：在 PDF 上选中文本，加入对话作为引用（带页码来源），再补充指令向 AI 提问。
 - 💬 **流式回答**：Markdown 排版、KaTeX 数学公式、代码高亮（基于 Vercel Streamdown）。
-- 🌐 **翻译模式**：右上角切换到翻译模式后，左侧划选文本即自动翻译（中英互译）。
+- 🌐 **翻译模式**：右上角切换到翻译模式后，左侧划选文本即自动翻译（中英互译），可单独指定轻量模型。
 - 🔑 **BYOK（自带 Key）**：支持 **Anthropic（Claude）/ OpenAI（GPT）/ DeepSeek**，API Key 仅存浏览器本地，随请求直发模型，不经第三方存储。
 - 🖼️ **图片输入**：上传或 `Ctrl+V` 粘贴图片；对不支持图像的模型（如 DeepSeek），可配置 **Qwen-VL** 视觉模型在上传时先把图转写为 Markdown 文本再喂给主模型。
 - 🧠 **DeepSeek 推理模式**：可在设置中开启 thinking，展示可折叠的「思考过程」（默认关）。
@@ -48,8 +48,9 @@ npm run dev
 点击右上角 ⚙️ **设置**：
 
 1. 选择模型提供商（Anthropic / DeepSeek / OpenAI），填入对应 API Key 与模型名。OpenAI / Anthropic 可选填 Base URL 以使用兼容接口。
-2. （可选）**图像转写**：DeepSeek 等不支持图像的模型，可开启并填入 Qwen（阿里云百炼 DashScope）的 Key，默认模型 `qwen3-vl-flash`，可点「测试连接」验证。
-3. （DeepSeek）可开启**推理模式**展示思考过程。
+2. （可选）**独立翻译模型**：默认翻译跟随对话模型；开启后可单独配置轻量模型，例如对话用 Pro、翻译用 Flash。同 provider 可留空翻译 Key/Base URL 复用主配置。
+3. （可选）**图像转写**：DeepSeek 等不支持图像的模型，可开启并填入 Qwen（阿里云百炼 DashScope）的 Key，默认模型 `qwen3-vl-flash`，可点「测试连接」验证。
+4. （DeepSeek）可开启**推理模式**展示思考过程。
 
 > Key 仅保存在浏览器 `localStorage`，通过 HTTPS 随请求发送到对应模型服务，本项目服务端不存储任何 Key。
 
