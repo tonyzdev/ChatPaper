@@ -38,7 +38,12 @@ export interface Settings {
   vision: VisionSettings;
   /** DeepSeek 思考/推理模式（默认关，开启会展示思考过程） */
   deepseekThinking: boolean;
+  /** 打开 PDF 时是否自动解析全文并作为对话上下文（默认关） */
+  autoParseFullText: boolean;
 }
+
+/** 整篇 PDF 全文解析状态 */
+export type PdfTextStatus = "idle" | "parsing" | "ready" | "error";
 
 export interface Conversation {
   id: string;
@@ -67,6 +72,11 @@ interface AppState {
   pdfId: string | null;
   numPages: number;
   citations: Citation[];
+  /** 当前 PDF 解析出的全文（不持久化，按需重新解析） */
+  pdfFullText: string | null;
+  pdfTextStatus: PdfTextStatus;
+  /** 解析进度：已完成页数（配合 numPages 显示） */
+  pdfTextProgress: number;
 
   // —— 设置 / 会话（持久化到 localStorage）——
   settings: Settings;
@@ -85,6 +95,9 @@ interface AppState {
   addCitation: (c: Omit<Citation, "id">) => void;
   removeCitation: (id: string) => void;
   clearCitations: () => void;
+  /** 写入/清空全文（传 null 清空，状态回 idle） */
+  setPdfFullText: (text: string | null) => void;
+  setPdfTextStatus: (status: PdfTextStatus, progress?: number) => void;
 
   setSettings: (s: Partial<Settings>) => void;
   hasApiKey: () => boolean;
@@ -113,6 +126,9 @@ export const useAppStore = create<AppState>()(
       pdfId: null,
       numPages: 0,
       citations: [],
+      pdfFullText: null,
+      pdfTextStatus: "idle",
+      pdfTextProgress: 0,
 
       settings: {
         provider: "anthropic",
@@ -134,6 +150,7 @@ export const useAppStore = create<AppState>()(
           baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
         },
         deepseekThinking: false,
+        autoParseFullText: false,
       },
       conversations: [],
       currentId: null,
@@ -153,6 +170,9 @@ export const useAppStore = create<AppState>()(
           pdfId: id,
           numPages: 0,
           citations: [],
+          pdfFullText: null,
+          pdfTextStatus: "idle",
+          pdfTextProgress: 0,
         });
       },
       closePdf: () => {
@@ -164,6 +184,9 @@ export const useAppStore = create<AppState>()(
           pdfId: null,
           numPages: 0,
           citations: [],
+          pdfFullText: null,
+          pdfTextStatus: "idle",
+          pdfTextProgress: 0,
         });
       },
       setNumPages: (n) => set({ numPages: n }),
@@ -174,6 +197,17 @@ export const useAppStore = create<AppState>()(
       removeCitation: (id) =>
         set((s) => ({ citations: s.citations.filter((x) => x.id !== id) })),
       clearCitations: () => set({ citations: [] }),
+      setPdfFullText: (text) =>
+        set({
+          pdfFullText: text,
+          pdfTextStatus: text ? "ready" : "idle",
+          pdfTextProgress: 0,
+        }),
+      setPdfTextStatus: (status, progress) =>
+        set((s) => ({
+          pdfTextStatus: status,
+          pdfTextProgress: progress ?? s.pdfTextProgress,
+        })),
 
       setSettings: (s) =>
         set((st) => ({ settings: { ...st.settings, ...s } })),
@@ -239,6 +273,9 @@ export const useAppStore = create<AppState>()(
               pdfId: conv.pdfId,
               numPages: 0,
               citations: [],
+              pdfFullText: null,
+              pdfTextStatus: "idle",
+              pdfTextProgress: 0,
             });
             return;
           }
@@ -251,6 +288,9 @@ export const useAppStore = create<AppState>()(
           pdfId: null,
           numPages: 0,
           citations: [],
+          pdfFullText: null,
+          pdfTextStatus: "idle",
+          pdfTextProgress: 0,
         });
       },
       deleteConversation: (id) =>

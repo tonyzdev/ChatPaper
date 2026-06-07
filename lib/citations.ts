@@ -36,3 +36,24 @@ export function buildCitationBlock(
 
   return `我从这篇 PDF 中划选了以下内容，请基于它回答我的问题：\n\n${blocks.join("\n\n")}`;
 }
+
+/**
+ * 把整篇 PDF 全文拼成「文档上下文」，注入到 system，让模型像读过全文一样作答。
+ * 超出预算按字符截断（保留开头），避免撑爆上下文窗口。
+ */
+export function buildDocumentBlock(
+  fullText: string | undefined | null,
+  fileName?: string | null,
+  charBudget = 60_000,
+): string | null {
+  const text = fullText?.trim();
+  if (!text) return null;
+
+  const title = fileName ? `《${fileName}》` : "这篇 PDF";
+  const body =
+    text.length > charBudget
+      ? `${text.slice(0, charBudget)}\n\n…（全文过长已截断，未包含的部分可让用户划选引用补充）`
+      : text;
+
+  return `以下是用户正在阅读的 ${title} 的全文，请基于它理解并回答用户的问题：\n\n${body}`;
+}

@@ -69,6 +69,8 @@ export function ChatPanel() {
   const mode = useAppStore((s) => s.mode);
   const setMode = useAppStore((s) => s.setMode);
   const setPendingTranslate = useAppStore((s) => s.setPendingTranslate);
+  const pdfFullText = useAppStore((s) => s.pdfFullText);
+  const fileName = useAppStore((s) => s.fileName);
 
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -292,6 +294,8 @@ export function ChatPanel() {
           model: settings.model,
           imageTranscriptions,
           deepseekThinking: settings.deepseekThinking,
+          fullText: pdfFullText ?? undefined,
+          pdfName: fileName ?? undefined,
         },
       },
     );

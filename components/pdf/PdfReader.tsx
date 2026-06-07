@@ -1,14 +1,28 @@
 "use client";
 
-import { FileUp, Leaf, Moon, Quote, Sun, X, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  Check,
+  FileText,
+  FileUp,
+  Leaf,
+  Moon,
+  Quote,
+  Sun,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { extractPdfText } from "@/lib/pdfText";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/useAppStore";
+import { type PdfTextStatus, useAppStore } from "@/store/useAppStore";
 
 // pdf.js worker：用 CDN，且版本与 react-pdf 内置 pdfjs 对齐，避免 worker 版本错配
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -36,8 +50,14 @@ export function PdfReader() {
   const setPinchZoom = useAppStore((s) => s.setPdfPinchZoom);
   const colorMode = useAppStore((s) => s.pdfColorMode);
   const setColorMode = useAppStore((s) => s.setPdfColorMode);
+  const autoParseFullText = useAppStore((s) => s.settings.autoParseFullText);
+  const pdfTextStatus = useAppStore((s) => s.pdfTextStatus);
+  const pdfTextProgress = useAppStore((s) => s.pdfTextProgress);
+  const setPdfFullText = useAppStore((s) => s.setPdfFullText);
+  const setPdfTextStatus = useAppStore((s) => s.setPdfTextStatus);
   const [popover, setPopover] = useState<Popover | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const docRef = useRef<PDFDocumentProxy | null>(null);
 
   // 触控板双指捏合 = 带 ctrlKey 的 wheel。始终拦截以防整页被缩放；
   // 开关开启时把它转成 PDF 缩放，关闭时双指照常滚动。
@@ -62,6 +82,33 @@ export function PdfReader() {
     },
     [openPdf],
   );
+
+  const runParse = useCallback(
+    async (pdf: PDFDocumentProxy) => {
+      if (useAppStore.getState().pdfTextStatus === "parsing") return;
+      setPdfTextStatus("parsing", 0);
+      try {
+        const text = await extractPdfText(pdf, (done) =>
+          setPdfTextStatus("parsing", done),
+        );
+        setPdfFullText(text);
+      } catch {
+        setPdfTextStatus("error");
+      }
+    },
+    [setPdfTextStatus, setPdfFullText],
+  );
+
+  // 设置里开启「自动解析全文」后，若已加载 PDF 但还没解析，补跑一次
+  useEffect(() => {
+    if (
+      autoParseFullText &&
+      docRef.current &&
+      useAppStore.getState().pdfTextStatus === "idle"
+    ) {
+      void runParse(docRef.current);
+    }
+  }, [autoParseFullText, runParse]);
 
   // 划选 → 计算引用文本 / 页码 / 浮钮位置
   const handleMouseUp = useCallback(() => {
@@ -124,6 +171,17 @@ export function PdfReader() {
         {numPages > 0 && (
           <span className="shrink-0 text-xs text-muted-foreground">{numPages} 页</span>
         )}
+        {numPages > 0 ? (
+          <FullTextButton
+            onClear={() => setPdfFullText(null)}
+            onParse={() => {
+              if (docRef.current) void runParse(docRef.current);
+            }}
+            progress={pdfTextProgress}
+            status={pdfTextStatus}
+            total={numPages}
+          />
+        ) : null}
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <label className="flex cursor-pointer select-none items-center gap-1.5" title="开启后用触控板双指捏合/张开缩放 PDF">
             <Switch
@@ -214,7 +272,13 @@ export function PdfReader() {
             error={<Center>无法加载该 PDF 文件</Center>}
             file={fileUrl}
             loading={<Center>正在加载 PDF…</Center>}
-            onLoadSuccess={({ numPages: n }) => setNumPages(n)}
+            onLoadSuccess={(pdf) => {
+              setNumPages(pdf.numPages);
+              docRef.current = pdf;
+              if (useAppStore.getState().settings.autoParseFullText) {
+                void runParse(pdf);
+              }
+            }}
           >
             {Array.from({ length: numPages }, (_, i) => (
               <div className="shadow-md" data-page-number={i + 1} key={i}>
@@ -290,5 +354,52 @@ function Center({ children }: { children: React.ReactNode }) {
     <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
       {children}
     </div>
+  );
+}
+
+function FullTextButton({
+  status,
+  progress,
+  total,
+  onParse,
+  onClear,
+}: {
+  status: PdfTextStatus;
+  progress: number;
+  total: number;
+  onParse: () => void;
+  onClear: () => void;
+}) {
+  if (status === "parsing") {
+    return (
+      <Button disabled size="sm" variant="outline">
+        <Spinner className="size-3.5" />
+        解析中 {progress}/{total}
+      </Button>
+    );
+  }
+  if (status === "ready") {
+    return (
+      <Button
+        onClick={onClear}
+        size="sm"
+        title="已解析全文并作为对话上下文，点击移除"
+        variant="secondary"
+      >
+        <Check className="size-3.5 text-green-600" />
+        全文已解析
+      </Button>
+    );
+  }
+  return (
+    <Button
+      onClick={onParse}
+      size="sm"
+      title="解析整篇 PDF 文本，作为对话上下文发送给 AI"
+      variant="outline"
+    >
+      <FileText className="size-3.5" />
+      {status === "error" ? "解析失败 · 重试" : "解析全文"}
+    </Button>
   );
 }
