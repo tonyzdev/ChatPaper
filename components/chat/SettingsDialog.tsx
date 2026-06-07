@@ -20,7 +20,12 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { type Provider, useAppStore, type VisionSettings } from "@/store/useAppStore";
+import {
+  type Provider,
+  type TranslationSettings,
+  useAppStore,
+  type VisionSettings,
+} from "@/store/useAppStore";
 
 const MODEL_PRESETS: Record<Provider, string[]> = {
   anthropic: ["claude-sonnet-4-5", "claude-opus-4-1"],
@@ -71,6 +76,9 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [baseURL, setBaseURL] = useState(settings.baseURL);
   const [model, setModel] = useState(settings.model);
+  const [translation, setTranslation] = useState<TranslationSettings>(
+    settings.translation,
+  );
   const [vision, setVision] = useState<VisionSettings>(settings.vision);
   const [thinking, setThinking] = useState(settings.deepseekThinking);
   const [test, setTest] = useState<TestState>({ status: "idle" });
@@ -81,11 +89,21 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
       apiKey: apiKey.trim(),
       baseURL: baseURL.trim(),
       model: model.trim(),
+      translation: {
+        ...translation,
+        apiKey: translation.apiKey.trim(),
+        baseURL: translation.baseURL.trim(),
+        model: translation.model.trim(),
+      },
       vision: { ...vision, apiKey: vision.apiKey.trim(), model: vision.model.trim() },
       deepseekThinking: thinking,
     });
     onClose();
   };
+
+  const canSave =
+    apiKey.trim().length > 0 ||
+    (!translation.useMainModel && translation.apiKey.trim().length > 0);
 
   const testVision = async () => {
     setTest({ status: "testing" });
@@ -182,6 +200,110 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
           </div>
         ) : null}
 
+        <div className="flex flex-col gap-2.5 rounded-lg border p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col">
+              <span className="font-medium text-sm">独立翻译模型</span>
+              <span className="text-muted-foreground text-xs">
+                关闭时跟随对话模型；开启后可用轻量模型处理划选翻译
+              </span>
+            </div>
+            <Switch
+              checked={!translation.useMainModel}
+              onCheckedChange={(c) =>
+                setTranslation((v) => ({ ...v, useMainModel: !c }))
+              }
+            />
+          </div>
+
+          {!translation.useMainModel ? (
+            <div className="flex flex-col gap-2.5 border-t pt-2.5">
+              <Field label="翻译模型提供商">
+                <Select
+                  onValueChange={(v) =>
+                    setTranslation((t) => ({ ...t, provider: v as Provider }))
+                  }
+                  value={translation.provider}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="anthropic">Anthropic（Claude）</SelectItem>
+                    <SelectItem value="deepseek">DeepSeek</SelectItem>
+                    <SelectItem value="openai">OpenAI（GPT）</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field label="翻译 API Key（同 provider 留空复用主 Key）">
+                <Input
+                  autoComplete="off"
+                  onChange={(e) =>
+                    setTranslation((t) => ({ ...t, apiKey: e.target.value }))
+                  }
+                  placeholder={KEY_HINT[translation.provider]}
+                  type="password"
+                  value={translation.apiKey}
+                />
+              </Field>
+
+              <Field label="翻译模型（留空用默认）">
+                <Input
+                  autoComplete="off"
+                  onChange={(e) =>
+                    setTranslation((t) => ({ ...t, model: e.target.value }))
+                  }
+                  placeholder={MODEL_HINT[translation.provider]}
+                  value={translation.model}
+                />
+                <div className="flex flex-wrap gap-1.5 pt-1.5">
+                  {MODEL_PRESETS[translation.provider].map((mm) => (
+                    <Preset
+                      active={translation.model === mm}
+                      key={mm}
+                      onClick={() => setTranslation((t) => ({ ...t, model: mm }))}
+                    >
+                      {mm}
+                    </Preset>
+                  ))}
+                </div>
+              </Field>
+
+              {translation.provider === "anthropic" ||
+              translation.provider === "openai" ? (
+                <Field label="翻译 Base URL（同 provider 留空复用主 Base URL）">
+                  <Input
+                    autoComplete="off"
+                    onChange={(e) =>
+                      setTranslation((t) => ({ ...t, baseURL: e.target.value }))
+                    }
+                    placeholder={BASE_URL_HINT[translation.provider]}
+                    value={translation.baseURL}
+                  />
+                </Field>
+              ) : null}
+
+              {translation.provider === "deepseek" ? (
+                <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
+                  <div className="flex flex-col">
+                    <span className="font-medium text-sm">翻译推理模式</span>
+                    <span className="text-muted-foreground text-xs">
+                      翻译默认建议关闭，速度更快
+                    </span>
+                  </div>
+                  <Switch
+                    checked={translation.deepseekThinking}
+                    onCheckedChange={(c) =>
+                      setTranslation((t) => ({ ...t, deepseekThinking: c }))
+                    }
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
         {/* 图像转写（给不支持图像的模型，如 DeepSeek） */}
         <div className="flex flex-col gap-2.5 rounded-lg border p-3">
           <div className="flex items-center justify-between gap-2">
@@ -267,7 +389,7 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
         <Button onClick={onClose} variant="outline">
           取消
         </Button>
-        <Button disabled={!apiKey.trim()} onClick={save}>
+        <Button disabled={!canSave} onClick={save}>
           保存
         </Button>
       </DialogFooter>

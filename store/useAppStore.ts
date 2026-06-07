@@ -14,6 +14,19 @@ export interface VisionSettings {
   baseURL: string;
 }
 
+export interface TranslationSettings {
+  /** 关闭时翻译跟随主对话模型；开启时使用下方独立模型 */
+  useMainModel: boolean;
+  provider: Provider;
+  apiKey: string;
+  /** OpenAI/Anthropic 兼容接口的自定义 Base URL；留空使用官方默认 */
+  baseURL: string;
+  /** 留空则用各 provider 的默认模型 */
+  model: string;
+  /** DeepSeek 思考/推理模式（默认关） */
+  deepseekThinking: boolean;
+}
+
 export interface Settings {
   provider: Provider;
   apiKey: string;
@@ -21,6 +34,7 @@ export interface Settings {
   baseURL: string;
   /** 留空则用各 provider 的默认模型 */
   model: string;
+  translation: TranslationSettings;
   vision: VisionSettings;
   /** DeepSeek 思考/推理模式（默认关，开启会展示思考过程） */
   deepseekThinking: boolean;
@@ -105,6 +119,14 @@ export const useAppStore = create<AppState>()(
         apiKey: "",
         baseURL: "",
         model: "",
+        translation: {
+          useMainModel: true,
+          provider: "deepseek",
+          apiKey: "",
+          baseURL: "",
+          model: "deepseek-v4-flash",
+          deepseekThinking: false,
+        },
         vision: {
           enabled: false,
           apiKey: "",
@@ -264,6 +286,10 @@ export const useAppStore = create<AppState>()(
             vision: {
               ...current.settings.vision,
               ...(p.settings?.vision ?? {}),
+            },
+            translation: {
+              ...current.settings.translation,
+              ...(p.settings?.translation ?? {}),
             },
           },
         };
