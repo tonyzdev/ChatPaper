@@ -47,7 +47,7 @@ npm run dev
 
 点击右上角 ⚙️ **设置**：
 
-1. 选择模型提供商（Anthropic / DeepSeek / OpenAI），填入对应 API Key 与模型名。
+1. 选择模型提供商（Anthropic / DeepSeek / OpenAI），填入对应 API Key 与模型名。OpenAI / Anthropic 可选填 Base URL 以使用兼容接口。
 2. （可选）**图像转写**：DeepSeek 等不支持图像的模型，可开启并填入 Qwen（阿里云百炼 DashScope）的 Key，默认模型 `qwen3-vl-flash`，可点「测试连接」验证。
 3. （DeepSeek）可开启**推理模式**展示思考过程。
 

@@ -10,6 +10,7 @@ const DEFAULT_DEEPSEEK = "deepseek-v4-flash";
 export interface ModelRequest {
   provider?: string;
   apiKey?: string;
+  baseURL?: string;
   model?: string;
 }
 
@@ -22,17 +23,23 @@ export interface ModelRequest {
  * 注：DeepSeek 用官方 @ai-sdk/deepseek（走 /chat/completions）。其标准 API 暂不支持
  * 图像输入，图像在 route 层被过滤为文字占位。
  */
-export function resolveModel({ provider, apiKey, model }: ModelRequest): LanguageModel {
+function cleanBaseURL(baseURL?: string) {
+  const url = baseURL?.trim();
+  return url ? url.replace(/\/+$/, "") : undefined;
+}
+
+export function resolveModel({ provider, apiKey, baseURL, model }: ModelRequest): LanguageModel {
   const key = apiKey?.trim();
+  const providerBaseURL = cleanBaseURL(baseURL);
 
   if (key && provider === "openai") {
-    return createOpenAI({ apiKey: key })(model || DEFAULT_OPENAI);
+    return createOpenAI({ apiKey: key, baseURL: providerBaseURL })(model || DEFAULT_OPENAI);
   }
   if (key && provider === "deepseek") {
     return createDeepSeek({ apiKey: key })(model || DEFAULT_DEEPSEEK);
   }
   if (key && provider === "anthropic") {
-    return createAnthropic({ apiKey: key })(model || DEFAULT_ANTHROPIC);
+    return createAnthropic({ apiKey: key, baseURL: providerBaseURL })(model || DEFAULT_ANTHROPIC);
   }
 
   if (process.env.ANTHROPIC_API_KEY) {

@@ -107,6 +107,7 @@ export function ChatPanel() {
         body: {
           provider: settings.provider,
           apiKey: settings.apiKey,
+          baseURL: settings.baseURL,
           model: settings.model,
           deepseekThinking: settings.deepseekThinking,
         },
@@ -265,6 +266,7 @@ export function ChatPanel() {
           citations: sentCitations,
           provider: settings.provider,
           apiKey: settings.apiKey,
+          baseURL: settings.baseURL,
           model: settings.model,
           imageTranscriptions,
           deepseekThinking: settings.deepseekThinking,
