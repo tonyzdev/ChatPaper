@@ -34,6 +34,14 @@ function getMessageCitations(m: UIMessage): Citation[] | undefined {
   return (m.metadata as { citations?: Citation[] } | undefined)?.citations;
 }
 
+// AI（尤其 DeepSeek）常用 \(...\) / \[...\] 包裹公式，而 Streamdown/KaTeX 只认
+// $...$ / $$...$$，这里统一转换，确保公式能渲染。
+function normalizeMath(s: string): string {
+  return s
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_, m: string) => `$$${m}$$`)
+    .replace(/\\\(([\s\S]*?)\\\)/g, (_, m: string) => `$${m}$`);
+}
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -377,7 +385,7 @@ export function ChatPanel() {
                           if (part.type === "text") {
                             return (
                               <MessageResponse key={`${m.id}-${i}`}>
-                                {part.text}
+                                {normalizeMath(part.text)}
                               </MessageResponse>
                             );
                           }
