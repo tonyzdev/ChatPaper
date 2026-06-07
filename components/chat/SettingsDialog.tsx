@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   type Provider,
@@ -81,6 +82,7 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
   );
   const [vision, setVision] = useState<VisionSettings>(settings.vision);
   const [thinking, setThinking] = useState(settings.deepseekThinking);
+  const [autoParse, setAutoParse] = useState(settings.autoParseFullText);
   const [test, setTest] = useState<TestState>({ status: "idle" });
 
   const save = () => {
@@ -97,6 +99,7 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
       },
       vision: { ...vision, apiKey: vision.apiKey.trim(), model: vision.model.trim() },
       deepseekThinking: thinking,
+      autoParseFullText: autoParse,
     });
     onClose();
   };
@@ -136,8 +139,15 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
           填入你的 API Key —— 仅保存在本地浏览器，随请求直发到模型，不经第三方存储。
         </DialogDescription>
       </DialogHeader>
+      <Tabs className="gap-3" defaultValue="model">
+        <TabsList className="w-full">
+          <TabsTrigger value="model">模型</TabsTrigger>
+          <TabsTrigger value="document">文档</TabsTrigger>
+        </TabsList>
 
-      <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto py-1">
+        <TabsContent value="model">
+
+      <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto py-1">
         <Field label="模型提供商">
           <Select onValueChange={(v) => setProvider(v as Provider)} value={provider}>
             <SelectTrigger className="w-full">
@@ -384,6 +394,25 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
           获取 Key：Anthropic → console.anthropic.com ；DeepSeek → platform.deepseek.com ；OpenAI → platform.openai.com ；Qwen → bailian.console.aliyun.com
         </p>
       </div>
+        </TabsContent>
+
+        <TabsContent value="document">
+          <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto py-1">
+            <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
+              <div className="flex flex-col">
+                <span className="font-medium text-sm">自动解析全文</span>
+                <span className="text-muted-foreground text-xs">
+                  打开 PDF 时自动解析整篇全文，作为对话上下文随消息发送给 AI，让它读过全文再作答；关闭时可在阅读器工具栏手动点「解析全文」。
+                </span>
+              </div>
+              <Switch checked={autoParse} onCheckedChange={setAutoParse} />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              全文在浏览器本地解析，不上传服务器；仅在你发送消息时随该消息发给所配置的模型。过长的全文会按长度截断。
+            </p>
+          </div>
+        </TabsContent>
+      </Tabs>
 
       <DialogFooter>
         <Button onClick={onClose} variant="outline">

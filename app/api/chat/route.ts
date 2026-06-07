@@ -4,7 +4,11 @@ import {
   streamText,
   type UIMessage,
 } from "ai";
-import { buildCitationBlock, SYSTEM_PROMPT } from "@/lib/citations";
+import {
+  buildCitationBlock,
+  buildDocumentBlock,
+  SYSTEM_PROMPT,
+} from "@/lib/citations";
 import { resolveModel } from "@/lib/models";
 import type { Citation } from "@/lib/types";
 
@@ -21,6 +25,9 @@ interface ChatBody {
   // DeepSeek 不支持图像：前端用视觉模型转写好后随消息发来（按最后一条 user 的图顺序）
   imageTranscriptions?: (string | null)[];
   deepseekThinking?: boolean;
+  // 全文解析：前端把整篇 PDF 文本随消息发来，注入 system 作为文档上下文
+  fullText?: string;
+  pdfName?: string;
 }
 
 const isImagePart = (p: UIMessage["parts"][number]) =>
@@ -36,6 +43,8 @@ export async function POST(req: Request) {
     model,
     imageTranscriptions,
     deepseekThinking,
+    fullText,
+    pdfName,
   }: ChatBody = await req.json();
 
   let working = messages;
@@ -96,9 +105,13 @@ export async function POST(req: Request) {
     }
   }
 
+  // 全文解析开启时，把整篇 PDF 注入到 system，让模型读过全文再作答
+  const docBlock = buildDocumentBlock(fullText, pdfName);
+  const system = docBlock ? `${SYSTEM_PROMPT}\n\n${docBlock}` : SYSTEM_PROMPT;
+
   const result = streamText({
     model: resolveModel({ provider, apiKey, baseURL, model }),
-    system: SYSTEM_PROMPT,
+    system,
     messages: modelMessages,
     // DeepSeek V4：thinking 显式开/关（默认关，开启会输出 reasoning 思考过程）
     providerOptions:
