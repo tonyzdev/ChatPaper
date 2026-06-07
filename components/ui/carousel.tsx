@@ -95,12 +95,16 @@ function Carousel({
 
   React.useEffect(() => {
     if (!api) return
-    onSelect(api)
     api.on("reInit", onSelect)
     api.on("select", onSelect)
+    // embla 初始化后不会主动触发 select，用 rAF 在提交后做一次初始同步，
+    // 避免在 effect 同步体内 setState（会触发级联渲染）
+    const raf = requestAnimationFrame(() => onSelect(api))
 
     return () => {
-      api?.off("select", onSelect)
+      cancelAnimationFrame(raf)
+      api.off("reInit", onSelect)
+      api.off("select", onSelect)
     }
   }, [api, onSelect])
 

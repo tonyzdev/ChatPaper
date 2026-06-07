@@ -68,7 +68,6 @@ export function ChatPanel() {
   const loadConversationPdf = useAppStore((s) => s.loadConversationPdf);
   const mode = useAppStore((s) => s.mode);
   const setMode = useAppStore((s) => s.setMode);
-  const pendingTranslate = useAppStore((s) => s.pendingTranslate);
   const setPendingTranslate = useAppStore((s) => s.setPendingTranslate);
 
   const [text, setText] = useState("");
@@ -89,39 +88,36 @@ export function ChatPanel() {
     }
   }, [status, messages, upsertCurrent]);
 
-  // 翻译模式：左侧划选的文本到达后自动翻译
+  // 翻译模式：左侧划选的文本通过 store 传来。用订阅把它当作“事件”处理 ——
+  // 在订阅回调里 setState（等同事件处理器），避免在 effect 体内同步 setState 触发级联渲染。
   useEffect(() => {
-    if (mode !== "translate" || !pendingTranslate) return;
-    const txt = pendingTranslate;
-    setPendingTranslate(null);
-    if (!settings.apiKey.trim()) {
-      setSettingsOpen(true);
-      return;
-    }
-    ensureConversation();
-    sendMessage(
-      {
-        text: `请翻译下面的文字（中文↔英文互译），只输出译文，不要任何解释：\n\n${txt}`,
-      },
-      {
-        body: {
-          provider: settings.provider,
-          apiKey: settings.apiKey,
-          baseURL: settings.baseURL,
-          model: settings.model,
-          deepseekThinking: settings.deepseekThinking,
+    return useAppStore.subscribe((state, prev) => {
+      const txt = state.pendingTranslate;
+      if (!txt || txt === prev.pendingTranslate) return;
+      if (state.mode !== "translate") return;
+      setPendingTranslate(null);
+      if (!settings.apiKey.trim()) {
+        setSettingsOpen(true);
+        return;
+      }
+      ensureConversation();
+      sendMessage(
+        {
+          text: `请翻译下面的文字（中文↔英文互译），只输出译文，不要任何解释：\n\n${txt}`,
         },
-      },
-    );
-    setSendTick((n) => n + 1);
-  }, [
-    pendingTranslate,
-    mode,
-    settings,
-    ensureConversation,
-    sendMessage,
-    setPendingTranslate,
-  ]);
+        {
+          body: {
+            provider: settings.provider,
+            apiKey: settings.apiKey,
+            baseURL: settings.baseURL,
+            model: settings.model,
+            deepseekThinking: settings.deepseekThinking,
+          },
+        },
+      );
+      setSendTick((n) => n + 1);
+    });
+  }, [settings, ensureConversation, sendMessage, setPendingTranslate]);
 
   // 刷新后恢复上次会话的消息与当时的 PDF
   // biome-ignore lint/correctness/useExhaustiveDependencies: 仅挂载时恢复一次
