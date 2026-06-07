@@ -13,6 +13,7 @@
 - 📄 **双栏布局**：左侧 PDF 阅读器 + 右侧 AI 对话，可拖拽调整宽度，整页固定不滚动，仅内部面板滚动。
 - ✂️ **划选即引用**：在 PDF 上选中文本，加入对话作为引用（带页码来源），再补充指令向 AI 提问。
 - 📖 **全文解析**：一键解析整篇 PDF 全文（浏览器本地用 pdf.js 抽取，不上传服务器），作为「文档上下文」随消息发给 AI，让它读过全文再作答；可在设置「文档」标签页开启「自动解析全文」，每次打开 PDF 时自动解析。
+- 🔎 **OCR（扫描件）**：没有文本层的扫描件 PDF，可用硅基流动（SiliconFlow）的 **DeepSeek-OCR** 逐页识别成文本，结果同样作为全文上下文喂给 AI；聊天里的图片转写也可改用 DeepSeek-OCR。在设置「文档」标签页开启并填 Key。
 - 💬 **流式回答**：Markdown 排版、KaTeX 数学公式、代码高亮（基于 Vercel Streamdown）。
 - 🌐 **翻译模式**：右上角切换到翻译模式后，左侧划选文本即自动翻译（中英互译），可单独指定轻量模型。
 - 🔑 **BYOK（自带 Key）**：支持 **Anthropic（Claude）/ OpenAI（GPT）/ DeepSeek**，API Key 仅存浏览器本地，随请求直发模型，不经第三方存储。
@@ -53,6 +54,7 @@ npm run dev
 3. （可选）**图像转写**：DeepSeek 等不支持图像的模型，可开启并填入 Qwen（阿里云百炼 DashScope）的 Key，默认模型 `qwen3-vl-flash`，可点「测试连接」验证。
 4. （DeepSeek）可开启**推理模式**展示思考过程。
 5. 切到「**文档**」标签页：可开启「**自动解析全文**」—— 每次打开 PDF 自动解析整篇全文作为对话上下文（默认关；关闭时也可在阅读器工具栏手动点「解析全文」）。
+6. （可选）「**文档**」标签页里的 **OCR（扫描件 / 图片识别）**：填入硅基流动（SiliconFlow）API Key 后，扫描件 PDF 可在工具栏「OCR 解析」逐页识别，聊天图片转写也会改用 DeepSeek-OCR（默认模型 `deepseek-ai/DeepSeek-OCR`）。
 
 > Key 仅保存在浏览器 `localStorage`，通过 HTTPS 随请求发送到对应模型服务，本项目服务端不存储任何 Key。
 
@@ -68,6 +70,7 @@ npm run dev
 - **全文上下文（可选）**：开启全文解析后，整篇 PDF 在浏览器端用 pdf.js 抽取为纯文本，随消息注入到后端 `system`（按长度截断），让模型获得全文上下文 —— 同样无需向量库 / RAG。
 - **薄后端**：仅一个 `app/api/chat/route.ts`，用 `streamText` 流式返回；引用内容注入到最后一条用户消息以确保模型读到。
 - **图像转写**：`app/api/transcribe`，用 OpenAI 兼容接口调用 Qwen-VL 把图片转 Markdown（DeepSeek 标准 API 不支持图像输入）。
+- **OCR（扫描件 / 图片）**：`app/api/ocr` 调用硅基流动 DeepSeek-OCR（OpenAI 兼容 `/chat/completions`，grounding 提示词、temperature 0）。扫描件在浏览器端用 pdf.js 把每页渲染成图片再逐页识别，结果复用同一套全文上下文管线。
 
 ## 📄 License
 

@@ -162,8 +162,8 @@ export function ChatPanel() {
   // 主模型不支持图像（deepseek）且配了视觉模型时，上传/粘贴图片即刻转写
   const needsTranscribe = () =>
     settings.provider === "deepseek" &&
-    settings.vision.enabled &&
-    settings.vision.apiKey.trim().length > 0;
+    ((settings.vision.enabled && settings.vision.apiKey.trim().length > 0) ||
+      (settings.ocr.enabled && settings.ocr.apiKey.trim().length > 0));
 
   const transcribe = async (item: Attachment) => {
     setAttachments((prev) =>
@@ -173,10 +173,16 @@ export function ChatPanel() {
     );
     try {
       const imageUrl = await fileToDataUrl(item.file);
-      const res = await fetch("/api/transcribe", {
+      const useOcr =
+        settings.ocr.enabled && settings.ocr.apiKey.trim().length > 0;
+      const res = await fetch(useOcr ? "/api/ocr" : "/api/transcribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl, vision: settings.vision }),
+        body: JSON.stringify(
+          useOcr
+            ? { imageUrl, ocr: settings.ocr }
+            : { imageUrl, vision: settings.vision },
+        ),
       });
       const data = (await res.json()) as { ok: boolean; text?: string };
       setAttachments((prev) =>
