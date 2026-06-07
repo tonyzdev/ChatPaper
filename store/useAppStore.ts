@@ -27,6 +27,14 @@ export interface TranslationSettings {
   deepseekThinking: boolean;
 }
 
+export interface OcrSettings {
+  /** 开启后可用 DeepSeek-OCR 识别扫描件 PDF / 聊天图片 */
+  enabled: boolean;
+  apiKey: string;
+  baseURL: string;
+  model: string;
+}
+
 export interface Settings {
   provider: Provider;
   apiKey: string;
@@ -36,6 +44,8 @@ export interface Settings {
   model: string;
   translation: TranslationSettings;
   vision: VisionSettings;
+  /** DeepSeek-OCR（硅基流动）OCR 引擎，用于扫描件全文与图片识别 */
+  ocr: OcrSettings;
   /** DeepSeek 思考/推理模式（默认关，开启会展示思考过程） */
   deepseekThinking: boolean;
   /** 打开 PDF 时是否自动解析全文并作为对话上下文（默认关） */
@@ -43,7 +53,7 @@ export interface Settings {
 }
 
 /** 整篇 PDF 全文解析状态 */
-export type PdfTextStatus = "idle" | "parsing" | "ready" | "error";
+export type PdfTextStatus = "idle" | "parsing" | "ready" | "error" | "scanned";
 
 export interface Conversation {
   id: string;
@@ -77,6 +87,8 @@ interface AppState {
   pdfTextStatus: PdfTextStatus;
   /** 解析进度：已完成页数（配合 numPages 显示） */
   pdfTextProgress: number;
+  /** 当前全文来自普通文本层(text)还是 OCR(ocr)，用于状态展示 */
+  pdfTextMode: "text" | "ocr";
 
   // —— 设置 / 会话（持久化到 localStorage）——
   settings: Settings;
@@ -98,6 +110,7 @@ interface AppState {
   /** 写入/清空全文（传 null 清空，状态回 idle） */
   setPdfFullText: (text: string | null) => void;
   setPdfTextStatus: (status: PdfTextStatus, progress?: number) => void;
+  setPdfTextMode: (mode: "text" | "ocr") => void;
 
   setSettings: (s: Partial<Settings>) => void;
   hasApiKey: () => boolean;
@@ -129,6 +142,7 @@ export const useAppStore = create<AppState>()(
       pdfFullText: null,
       pdfTextStatus: "idle",
       pdfTextProgress: 0,
+      pdfTextMode: "text",
 
       settings: {
         provider: "anthropic",
@@ -148,6 +162,12 @@ export const useAppStore = create<AppState>()(
           apiKey: "",
           model: "qwen3-vl-flash",
           baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        },
+        ocr: {
+          enabled: false,
+          apiKey: "",
+          baseURL: "https://api.siliconflow.cn/v1",
+          model: "deepseek-ai/DeepSeek-OCR",
         },
         deepseekThinking: false,
         autoParseFullText: false,
@@ -208,6 +228,7 @@ export const useAppStore = create<AppState>()(
           pdfTextStatus: status,
           pdfTextProgress: progress ?? s.pdfTextProgress,
         })),
+      setPdfTextMode: (mode) => set({ pdfTextMode: mode }),
 
       setSettings: (s) =>
         set((st) => ({ settings: { ...st.settings, ...s } })),
@@ -330,6 +351,10 @@ export const useAppStore = create<AppState>()(
             translation: {
               ...current.settings.translation,
               ...(p.settings?.translation ?? {}),
+            },
+            ocr: {
+              ...current.settings.ocr,
+              ...(p.settings?.ocr ?? {}),
             },
           },
         };

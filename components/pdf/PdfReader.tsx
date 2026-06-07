@@ -2,6 +2,7 @@
 
 import {
   Check,
+  FileSearch,
   FileText,
   FileUp,
   Leaf,
@@ -55,6 +56,11 @@ export function PdfReader() {
   const pdfTextProgress = useAppStore((s) => s.pdfTextProgress);
   const setPdfFullText = useAppStore((s) => s.setPdfFullText);
   const setPdfTextStatus = useAppStore((s) => s.setPdfTextStatus);
+  const setPdfTextMode = useAppStore((s) => s.setPdfTextMode);
+  const pdfTextMode = useAppStore((s) => s.pdfTextMode);
+  const ocrEnabled = useAppStore(
+    (s) => s.settings.ocr.enabled && s.settings.ocr.apiKey.trim().length > 0,
+  );
   const [popover, setPopover] = useState<Popover | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<PDFDocumentProxy | null>(null);
@@ -86,17 +92,58 @@ export function PdfReader() {
   const runParse = useCallback(
     async (pdf: PDFDocumentProxy) => {
       if (useAppStore.getState().pdfTextStatus === "parsing") return;
+      setPdfTextMode("text");
       setPdfTextStatus("parsing", 0);
       try {
         const text = await extractPdfText(pdf, (done) =>
           setPdfTextStatus("parsing", done),
         );
-        setPdfFullText(text);
+        // 文本层近乎为空 → 多半是扫描件：提示用 OCR（不自动跑，避免意外消耗）
+        if (text.replace(/\s/g, "").length < pdf.numPages * 10) {
+          setPdfTextStatus("scanned");
+        } else {
+          setPdfFullText(text);
+        }
       } catch {
         setPdfTextStatus("error");
       }
     },
-    [setPdfTextStatus, setPdfFullText],
+    [setPdfTextStatus, setPdfFullText, setPdfTextMode],
+  );
+
+  // 扫描件：逐页渲染成图片，交给 DeepSeek-OCR 识别，结果走同一套全文上下文管线
+  const ocrPdf = useCallback(
+    async (pdf: PDFDocumentProxy) => {
+      const ocr = useAppStore.getState().settings.ocr;
+      if (!ocr.enabled || !ocr.apiKey.trim()) return;
+      if (useAppStore.getState().pdfTextStatus === "parsing") return;
+      setPdfTextMode("ocr");
+      setPdfTextStatus("parsing", 0);
+      try {
+        const total = pdf.numPages;
+        const pages: string[] = [];
+        for (let i = 1; i <= total; i++) {
+          const imageUrl = await renderPageToImage(pdf, i);
+          const res = await fetch("/api/ocr", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageUrl, ocr }),
+          });
+          const data = (await res.json()) as {
+            ok: boolean;
+            text?: string;
+            error?: string;
+          };
+          if (!data.ok) throw new Error(data.error || "OCR 失败");
+          pages.push((data.text || "").trim());
+          setPdfTextStatus("parsing", i);
+        }
+        setPdfFullText(pages.join("\n\n").replace(/\n{3,}/g, "\n\n").trim());
+      } catch {
+        setPdfTextStatus("error");
+      }
+    },
+    [setPdfTextStatus, setPdfFullText, setPdfTextMode],
   );
 
   // 设置里开启「自动解析全文」后，若已加载 PDF 但还没解析，补跑一次
@@ -173,7 +220,12 @@ export function PdfReader() {
         )}
         {numPages > 0 ? (
           <FullTextButton
+            mode={pdfTextMode}
+            ocrEnabled={ocrEnabled}
             onClear={() => setPdfFullText(null)}
+            onOcr={() => {
+              if (docRef.current) void ocrPdf(docRef.current);
+            }}
             onParse={() => {
               if (docRef.current) void runParse(docRef.current);
             }}
@@ -357,24 +409,48 @@ function Center({ children }: { children: React.ReactNode }) {
   );
 }
 
+async function renderPageToImage(
+  pdf: PDFDocumentProxy,
+  pageNum: number,
+  targetWidth = 1500,
+): Promise<string> {
+  const page = await pdf.getPage(pageNum);
+  const base = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale: targetWidth / base.width });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas 2d context 不可用");
+  await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+  page.cleanup();
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
 function FullTextButton({
   status,
+  mode,
   progress,
   total,
+  ocrEnabled,
   onParse,
+  onOcr,
   onClear,
 }: {
   status: PdfTextStatus;
+  mode: "text" | "ocr";
   progress: number;
   total: number;
+  ocrEnabled: boolean;
   onParse: () => void;
+  onOcr: () => void;
   onClear: () => void;
 }) {
   if (status === "parsing") {
     return (
       <Button disabled size="sm" variant="outline">
         <Spinner className="size-3.5" />
-        解析中 {progress}/{total}
+        {mode === "ocr" ? "OCR 中" : "解析中"} {progress}/{total}
       </Button>
     );
   }
@@ -383,11 +459,34 @@ function FullTextButton({
       <Button
         onClick={onClear}
         size="sm"
-        title="已解析全文并作为对话上下文，点击移除"
+        title="已作为对话上下文，点击移除"
         variant="secondary"
       >
         <Check className="size-3.5 text-green-600" />
-        全文已解析
+        {mode === "ocr" ? "OCR 全文已就绪" : "全文已解析"}
+      </Button>
+    );
+  }
+  if (status === "scanned") {
+    return ocrEnabled ? (
+      <Button
+        onClick={onOcr}
+        size="sm"
+        title="该 PDF 无文本层，用 DeepSeek-OCR 逐页识别"
+        variant="outline"
+      >
+        <FileSearch className="size-3.5" />
+        OCR 解析
+      </Button>
+    ) : (
+      <Button
+        onClick={onParse}
+        size="sm"
+        title="疑似扫描件（无文本层）。在 设置→文档 开启 OCR 后可识别"
+        variant="outline"
+      >
+        <FileSearch className="size-3.5" />
+        疑似扫描件
       </Button>
     );
   }

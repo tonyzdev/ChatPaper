@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   type Provider,
+  type OcrSettings,
   type TranslationSettings,
   useAppStore,
   type VisionSettings,
@@ -83,6 +84,7 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
   const [vision, setVision] = useState<VisionSettings>(settings.vision);
   const [thinking, setThinking] = useState(settings.deepseekThinking);
   const [autoParse, setAutoParse] = useState(settings.autoParseFullText);
+  const [ocr, setOcr] = useState<OcrSettings>(settings.ocr);
   const [test, setTest] = useState<TestState>({ status: "idle" });
 
   const save = () => {
@@ -100,13 +102,20 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
       vision: { ...vision, apiKey: vision.apiKey.trim(), model: vision.model.trim() },
       deepseekThinking: thinking,
       autoParseFullText: autoParse,
+      ocr: {
+        ...ocr,
+        apiKey: ocr.apiKey.trim(),
+        baseURL: ocr.baseURL.trim(),
+        model: ocr.model.trim(),
+      },
     });
     onClose();
   };
 
   const canSave =
     apiKey.trim().length > 0 ||
-    (!translation.useMainModel && translation.apiKey.trim().length > 0);
+    (!translation.useMainModel && translation.apiKey.trim().length > 0) ||
+    (ocr.enabled && ocr.apiKey.trim().length > 0);
 
   const testVision = async () => {
     setTest({ status: "testing" });
@@ -410,6 +419,51 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
             <p className="text-muted-foreground text-xs">
               全文在浏览器本地解析，不上传服务器；仅在你发送消息时随该消息发给所配置的模型。过长的全文会按长度截断。
             </p>
+
+            <div className="flex flex-col gap-2.5 rounded-lg border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-col">
+                  <span className="font-medium text-sm">OCR（扫描件 / 图片识别）</span>
+                  <span className="text-muted-foreground text-xs">
+                    用硅基流动 DeepSeek-OCR 识别扫描件 PDF 与聊天图片（PDF 无文本层时可在工具栏「OCR 解析」）
+                  </span>
+                </div>
+                <Switch
+                  checked={ocr.enabled}
+                  onCheckedChange={(c) => setOcr((v) => ({ ...v, enabled: c }))}
+                />
+              </div>
+
+              {ocr.enabled ? (
+                <div className="flex flex-col gap-2.5 border-t pt-2.5">
+                  <Field label="SiliconFlow API Key">
+                    <Input
+                      autoComplete="off"
+                      onChange={(e) => setOcr((v) => ({ ...v, apiKey: e.target.value }))}
+                      placeholder="sk-…"
+                      type="password"
+                      value={ocr.apiKey}
+                    />
+                  </Field>
+                  <Field label="OCR 模型">
+                    <Input
+                      autoComplete="off"
+                      onChange={(e) => setOcr((v) => ({ ...v, model: e.target.value }))}
+                      placeholder="deepseek-ai/DeepSeek-OCR"
+                      value={ocr.model}
+                    />
+                  </Field>
+                  <Field label="Base URL">
+                    <Input
+                      autoComplete="off"
+                      onChange={(e) => setOcr((v) => ({ ...v, baseURL: e.target.value }))}
+                      placeholder="https://api.siliconflow.cn/v1"
+                      value={ocr.baseURL}
+                    />
+                  </Field>
+                </div>
+              ) : null}
+            </div>
           </div>
         </TabsContent>
       </Tabs>
