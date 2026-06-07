@@ -37,6 +37,10 @@ const KEY_HINT: Record<Provider, string> = {
   deepseek: "sk-…",
   openai: "sk-…",
 };
+const BASE_URL_HINT: Partial<Record<Provider, string>> = {
+  anthropic: "https://api.anthropic.com/v1",
+  openai: "https://api.openai.com/v1",
+};
 const VISION_PRESETS = ["qwen3-vl-flash", "qwen3-vl-plus"];
 
 type TestState = { status: "idle" | "testing" | "ok" | "fail"; msg?: string };
@@ -53,6 +57,7 @@ export function SettingsDialog({
 
   const [provider, setProvider] = useState<Provider>(settings.provider);
   const [apiKey, setApiKey] = useState(settings.apiKey);
+  const [baseURL, setBaseURL] = useState(settings.baseURL);
   const [model, setModel] = useState(settings.model);
   const [vision, setVision] = useState<VisionSettings>(settings.vision);
   const [thinking, setThinking] = useState(settings.deepseekThinking);
@@ -62,6 +67,7 @@ export function SettingsDialog({
     if (open) {
       setProvider(settings.provider);
       setApiKey(settings.apiKey);
+      setBaseURL(settings.baseURL);
       setModel(settings.model);
       setVision(settings.vision);
       setThinking(settings.deepseekThinking);
@@ -73,6 +79,7 @@ export function SettingsDialog({
     setSettings({
       provider,
       apiKey: apiKey.trim(),
+      baseURL: baseURL.trim(),
       model: model.trim(),
       vision: { ...vision, apiKey: vision.apiKey.trim(), model: vision.model.trim() },
       deepseekThinking: thinking,
@@ -152,6 +159,17 @@ export function SettingsDialog({
               ))}
             </div>
           </Field>
+
+          {provider === "anthropic" || provider === "openai" ? (
+            <Field label="Base URL（兼容接口；留空使用官方默认）">
+              <Input
+                autoComplete="off"
+                onChange={(e) => setBaseURL(e.target.value)}
+                placeholder={BASE_URL_HINT[provider]}
+                value={baseURL}
+              />
+            </Field>
+          ) : null}
 
           {provider === "deepseek" ? (
             <div className="flex items-center justify-between gap-2 rounded-lg border p-3">

@@ -17,6 +17,8 @@ export interface VisionSettings {
 export interface Settings {
   provider: Provider;
   apiKey: string;
+  /** OpenAI/Anthropic 兼容接口的自定义 Base URL；留空使用官方默认 */
+  baseURL: string;
   /** 留空则用各 provider 的默认模型 */
   model: string;
   vision: VisionSettings;
@@ -101,6 +103,7 @@ export const useAppStore = create<AppState>()(
       settings: {
         provider: "anthropic",
         apiKey: "",
+        baseURL: "",
         model: "",
         vision: {
           enabled: false,

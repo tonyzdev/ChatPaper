@@ -16,6 +16,7 @@ interface ChatBody {
   // BYOK：前端在设置里填的 key 随请求发来（HTTPS 加密，服务端不存储）
   provider?: string;
   apiKey?: string;
+  baseURL?: string;
   model?: string;
   // DeepSeek 不支持图像：前端用视觉模型转写好后随消息发来（按最后一条 user 的图顺序）
   imageTranscriptions?: (string | null)[];
@@ -31,6 +32,7 @@ export async function POST(req: Request) {
     citations,
     provider,
     apiKey,
+    baseURL,
     model,
     imageTranscriptions,
     deepseekThinking,
@@ -95,7 +97,7 @@ export async function POST(req: Request) {
   }
 
   const result = streamText({
-    model: resolveModel({ provider, apiKey, model }),
+    model: resolveModel({ provider, apiKey, baseURL, model }),
     system: SYSTEM_PROMPT,
     messages: modelMessages,
     // DeepSeek V4：thinking 显式开/关（默认关，开启会输出 reasoning 思考过程）
