@@ -58,6 +58,7 @@ export function ChatPanel() {
   const upsertCurrent = useAppStore((s) => s.upsertCurrent);
   const newConversation = useAppStore((s) => s.newConversation);
   const switchConversation = useAppStore((s) => s.switchConversation);
+  const deleteConversation = useAppStore((s) => s.deleteConversation);
   const loadConversationPdf = useAppStore((s) => s.loadConversationPdf);
   const mode = useAppStore((s) => s.mode);
   const setMode = useAppStore((s) => s.setMode);
@@ -317,6 +318,7 @@ export function ChatPanel() {
   };
 
   const handleNewChat = () => {
+    stop(); // 流式中开新对话：先停掉，否则后续 chunk 会写进新会话
     newConversation();
     setMessages([]);
     setText("");
@@ -325,10 +327,22 @@ export function ChatPanel() {
   };
 
   const handleSelectConversation = (id: string) => {
+    stop(); // 流式中切换会话：先停掉，否则旧会话的回复会混进切换后的会话
     const conv = conversations.find((c) => c.id === id);
     switchConversation(id);
     setMessages(conv?.messages ?? []);
     void loadConversationPdf(conv);
+  };
+
+  const handleDeleteConversation = (id: string) => {
+    const wasCurrent = useAppStore.getState().currentId === id;
+    deleteConversation(id);
+    // 删除的是当前会话：停掉进行中的流并清空聊天区，
+    // 否则残留消息会在下次发送时被整体写进新建的会话
+    if (wasCurrent) {
+      stop();
+      setMessages([]);
+    }
   };
 
   return (
@@ -504,6 +518,7 @@ export function ChatPanel() {
 
       <SettingsDialog onOpenChange={setSettingsOpen} open={settingsOpen} />
       <HistoryDialog
+        onDelete={handleDeleteConversation}
         onOpenChange={setHistoryOpen}
         onSelect={handleSelectConversation}
         open={historyOpen}
