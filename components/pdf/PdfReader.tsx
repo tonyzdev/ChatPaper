@@ -49,6 +49,7 @@ export function PdfReader() {
   const addCitation = useAppStore((s) => s.addCitation);
   const mode = useAppStore((s) => s.mode);
   const setPendingTranslate = useAppStore((s) => s.setPendingTranslate);
+  const pdfJump = useAppStore((s) => s.pdfJump);
 
   const [scale, setScale] = useState(1.2);
   const pinchZoom = useAppStore((s) => s.pdfPinchZoom);
@@ -70,6 +71,20 @@ export function PdfReader() {
   const [pageSizes, setPageSizes] = useState<{ width: number; height: number }[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<PDFDocumentProxy | null>(null);
+
+  // 点击 AI 回答里的页码引用 → 滚动到该页并高亮闪烁定位。懒渲染下占位 div
+  // 始终在 DOM（带 data-page-number），滚动进视口会触发该页真正渲染。
+  useEffect(() => {
+    if (!pdfJump) return;
+    const el = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-page-number="${pdfJump.page}"]`,
+    );
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.classList.add("cp-page-flash");
+    const t = setTimeout(() => el.classList.remove("cp-page-flash"), 1600);
+    return () => clearTimeout(t);
+  }, [pdfJump]);
 
   const collectPageSizes = useCallback(async (pdf: PDFDocumentProxy) => {
     const sizes: { width: number; height: number }[] = [];
@@ -173,7 +188,13 @@ export function PdfReader() {
         await Promise.all(
           Array.from({ length: Math.min(3, total) }, () => worker()),
         );
-        setPdfFullText(pages.join("\n\n").replace(/\n{3,}/g, "\n\n").trim());
+        setPdfFullText(
+          pages
+            .map((p, i) => `[第 ${i + 1} 页]\n${p}`)
+            .join("\n\n")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim(),
+        );
       } catch {
         setPdfTextStatus("error");
       }

@@ -178,3 +178,18 @@ body {
 .react-pdf__Page__canvas {
   display: block;
 }
+
+/* 点击 AI 回答里的页码引用跳转到该页时，整页高亮闪烁一下用于定位 */
+@keyframes cp-page-flash {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(234, 179, 8, 0);
+  }
+  25%,
+  60% {
+    box-shadow: 0 0 0 4px rgba(234, 179, 8, 0.75);
+  }
+}
+.cp-page-flash {
+  animation: cp-page-flash 1.6s ease-in-out;
+}

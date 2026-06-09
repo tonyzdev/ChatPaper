@@ -28,6 +28,11 @@ export async function extractPdfText(
     onProgress?.(i, total);
   }
 
-  // 折叠 3 个以上连续换行，避免大段空白
-  return pages.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+  // 每页前缀「[第 N 页]」标记：让模型知道每段在第几页，回答时可标注来源页供跳转；
+  // 同时折叠 3 个以上连续换行避免大段空白
+  return pages
+    .map((p, i) => `[第 ${i + 1} 页]\n${p}`)
+    .join("\n\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
