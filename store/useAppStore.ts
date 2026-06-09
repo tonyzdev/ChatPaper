@@ -75,6 +75,8 @@ function deriveTitle(messages: UIMessage[]): string {
   return text.slice(0, 24);
 }
 
+let pdfLoadRequest = 0;
+
 interface AppState {
   // —— PDF / 引用（不持久化）——
   fileUrl: string | null;
@@ -180,33 +182,54 @@ export const useAppStore = create<AppState>()(
       pendingTranslate: null,
 
       openPdf: (file) => {
+        pdfLoadRequest += 1;
         const prev = get().fileUrl;
         if (prev) URL.revokeObjectURL(prev);
         const id = crypto.randomUUID();
+        const fileName = file.name;
         void savePdf(id, file); // 后台存入 IndexedDB，供历史会话恢复
-        set({
-          fileUrl: URL.createObjectURL(file),
-          fileName: file.name,
-          pdfId: id,
-          numPages: 0,
-          citations: [],
-          pdfFullText: null,
-          pdfTextStatus: "idle",
-          pdfTextProgress: 0,
+        set((st) => {
+          const next = {
+            fileUrl: URL.createObjectURL(file),
+            fileName,
+            pdfId: id,
+            numPages: 0,
+            citations: [],
+            pdfFullText: null,
+            pdfTextStatus: "idle" as const,
+            pdfTextProgress: 0,
+          };
+          if (!st.currentId) return next;
+          const conversations = st.conversations.map((c) =>
+            c.id === st.currentId
+              ? { ...c, updatedAt: Date.now(), pdfId: id, pdfName: fileName }
+              : c,
+          );
+          return { ...next, conversations };
         });
       },
       closePdf: () => {
+        pdfLoadRequest += 1;
         const prev = get().fileUrl;
         if (prev) URL.revokeObjectURL(prev);
-        set({
-          fileUrl: null,
-          fileName: null,
-          pdfId: null,
-          numPages: 0,
-          citations: [],
-          pdfFullText: null,
-          pdfTextStatus: "idle",
-          pdfTextProgress: 0,
+        set((st) => {
+          const next = {
+            fileUrl: null,
+            fileName: null,
+            pdfId: null,
+            numPages: 0,
+            citations: [],
+            pdfFullText: null,
+            pdfTextStatus: "idle" as const,
+            pdfTextProgress: 0,
+          };
+          if (!st.currentId) return next;
+          const conversations = st.conversations.map((c) =>
+            c.id === st.currentId
+              ? { ...c, updatedAt: Date.now(), pdfId: undefined, pdfName: undefined }
+              : c,
+          );
+          return { ...next, conversations };
         });
       },
       setNumPages: (n) => set({ numPages: n }),
@@ -239,7 +262,7 @@ export const useAppStore = create<AppState>()(
       setPendingTranslate: (t) => set({ pendingTranslate: t }),
 
       ensureConversation: () => {
-        const { currentId, conversations } = get();
+        const { currentId, conversations, pdfId, fileName } = get();
         if (currentId && conversations.some((c) => c.id === currentId)) {
           return currentId;
         }
@@ -247,7 +270,14 @@ export const useAppStore = create<AppState>()(
         set((st) => ({
           currentId: id,
           conversations: [
-            { id, title: "新对话", messages: [], updatedAt: Date.now() },
+            {
+              id,
+              title: "新对话",
+              messages: [],
+              updatedAt: Date.now(),
+              pdfId: pdfId ?? undefined,
+              pdfName: fileName ?? undefined,
+            },
             ...st.conversations,
           ],
         }));
@@ -283,25 +313,40 @@ export const useAppStore = create<AppState>()(
       newConversation: () => set({ currentId: null }),
       switchConversation: (id) => set({ currentId: id }),
       loadConversationPdf: async (conv) => {
-        const prev = get().fileUrl;
+        const request = ++pdfLoadRequest;
         if (conv?.pdfId) {
-          const file = await loadPdf(conv.pdfId);
+          let file: File | undefined;
+          try {
+            file = await loadPdf(conv.pdfId);
+          } catch {
+            file = undefined;
+          }
+          if (request !== pdfLoadRequest) return;
           if (file) {
+            const prev = get().fileUrl;
             if (prev) URL.revokeObjectURL(prev);
-            set({
+            const fileName = conv.pdfName ?? file.name;
+            set((st) => ({
               fileUrl: URL.createObjectURL(file),
-              fileName: conv.pdfName ?? file.name,
+              fileName,
               pdfId: conv.pdfId,
               numPages: 0,
               citations: [],
               pdfFullText: null,
               pdfTextStatus: "idle",
               pdfTextProgress: 0,
-            });
+              conversations: conv.pdfName
+                ? st.conversations
+                : st.conversations.map((c) =>
+                    c.id === conv.id ? { ...c, pdfName: fileName } : c,
+                  ),
+            }));
             return;
           }
         }
         // 该会话没有关联 PDF（或文件已丢失）：清空阅读器
+        if (request !== pdfLoadRequest) return;
+        const prev = get().fileUrl;
         if (prev) URL.revokeObjectURL(prev);
         set({
           fileUrl: null,
@@ -316,10 +361,16 @@ export const useAppStore = create<AppState>()(
       },
       deleteConversation: (id) =>
         set((st) => {
+          const nextConversations = st.conversations.filter((c) => c.id !== id);
           const conv = st.conversations.find((c) => c.id === id);
-          if (conv?.pdfId) void deletePdf(conv.pdfId);
+          if (
+            conv?.pdfId &&
+            !nextConversations.some((c) => c.pdfId === conv.pdfId)
+          ) {
+            void deletePdf(conv.pdfId);
+          }
           return {
-            conversations: st.conversations.filter((c) => c.id !== id),
+            conversations: nextConversations,
             currentId: st.currentId === id ? null : st.currentId,
           };
         }),
