@@ -37,6 +37,40 @@ interface ChatBody {
 const isImagePart = (p: UIMessage["parts"][number]) =>
   p.type === "file" && p.mediaType?.startsWith("image/");
 
+/**
+ * 长对话上下文窗口：从最新往回保留约 charBudget 字符的消息，更早的丢弃。
+ * 不截会让每轮请求线性变贵，聊得久还会撞上下文上限。
+ * 非文本 part（图片等）按固定 2000 字符估算；截断起点对齐到 user 消息，
+ * 避免发给模型的历史以 assistant 开头。
+ */
+function truncateHistory(
+  messages: UIMessage[],
+  charBudget = 120_000,
+): UIMessage[] {
+  let used = 0;
+  let start = messages.length;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const size = messages[i].parts.reduce(
+      (n, p) =>
+        n + ("text" in p && typeof p.text === "string" ? p.text.length : 2000),
+      0,
+    );
+    if (used + size > charBudget && start < messages.length) break;
+    used += size;
+    start = i;
+  }
+  while (start > 0 && start < messages.length && messages[start].role !== "user") {
+    start++;
+  }
+  return start <= 0 ? messages : messages.slice(start);
+}
+
+// Anthropic 显式 prompt caching 断点；其他 provider 会忽略该字段
+// （OpenAI/DeepSeek 是自动缓存，无需标记）
+const CACHE_EPHEMERAL = {
+  anthropic: { cacheControl: { type: "ephemeral" as const } },
+};
+
 export async function POST(req: Request) {
   const {
     messages,
@@ -69,20 +103,21 @@ export async function POST(req: Request) {
     );
   }
 
-  let working = messages;
+  let working = truncateHistory(messages);
 
   // DeepSeek 不支持图像输入：把最后一条 user 的图替换为前端转写好的文本，其余历史图占位
   if (provider === "deepseek") {
     const transcripts = imageTranscriptions ?? [];
+    const truncated = working;
     let lastUserIdx = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") {
+    for (let i = truncated.length - 1; i >= 0; i--) {
+      if (truncated[i].role === "user") {
         lastUserIdx = i;
         break;
       }
     }
     let cursor = 0;
-    working = messages.map((m, idx) => {
+    working = truncated.map((m, idx) => {
       const parts = m.parts ?? [];
       if (!parts.some(isImagePart)) return m;
       const newParts: UIMessage["parts"] = [];
@@ -127,14 +162,29 @@ export async function POST(req: Request) {
     }
   }
 
-  // 全文解析开启时，把整篇 PDF 注入到 system，让模型读过全文再作答
+  // 全文解析开启时，把整篇 PDF 作为独立 system 消息注入，并打 Anthropic
+  // 缓存断点：长全文每轮重复计费是成本大头，命中缓存后该段输入价约 1/10，
+  // 首 token 延迟也明显下降（OpenAI/DeepSeek 自动缓存，忽略该标记）
   const docBlock = buildDocumentBlock(fullText, pdfName);
-  const system = docBlock ? `${SYSTEM_PROMPT}\n\n${docBlock}` : SYSTEM_PROMPT;
+  const systemMessages: ModelMessage[] = docBlock
+    ? [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: docBlock, providerOptions: CACHE_EPHEMERAL },
+      ]
+    : [{ role: "system", content: SYSTEM_PROMPT }];
+
+  // 多轮缓存：最后一条消息也打断点，下一轮请求时整个历史前缀直接命中
+  const lastMessage = modelMessages.at(-1);
+  if (lastMessage) {
+    modelMessages[modelMessages.length - 1] = {
+      ...lastMessage,
+      providerOptions: CACHE_EPHEMERAL,
+    } as ModelMessage;
+  }
 
   const result = streamText({
     model: chatModel,
-    system,
-    messages: modelMessages,
+    messages: [...systemMessages, ...modelMessages],
     // DeepSeek V4：thinking 显式开/关（默认关，开启会输出 reasoning 思考过程）
     providerOptions:
       provider === "deepseek"

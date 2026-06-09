@@ -30,14 +30,14 @@ import {
 } from "@/store/useAppStore";
 
 const MODEL_PRESETS: Record<Provider, string[]> = {
-  anthropic: ["claude-sonnet-4-5", "claude-opus-4-1"],
+  anthropic: ["claude-sonnet-4-6", "claude-opus-4-8"],
   deepseek: ["deepseek-v4-flash", "deepseek-v4-pro"],
-  openai: ["gpt-4o", "gpt-4o-mini"],
+  openai: ["gpt-5.5", "gpt-5.4-mini"],
 };
 const MODEL_HINT: Record<Provider, string> = {
-  anthropic: "claude-sonnet-4-5",
+  anthropic: "claude-sonnet-4-6",
   deepseek: "deepseek-v4-flash",
-  openai: "gpt-4o-mini",
+  openai: "gpt-5.4-mini",
 };
 const KEY_HINT: Record<Provider, string> = {
   anthropic: "sk-ant-…",
