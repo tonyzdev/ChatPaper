@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { FileText, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -36,37 +36,49 @@ export function HistoryDialog({
               暂无历史对话
             </p>
           ) : (
-            conversations.map((c) => (
-              <div
-                className={cn(
-                  "group flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 transition-colors hover:bg-accent",
-                  c.id === currentId && "bg-accent",
-                )}
-                key={c.id}
-                onClick={() => {
-                  onSelect(c.id);
-                  onOpenChange(false);
-                }}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm">{c.title || "新对话"}</div>
-                  <div className="text-muted-foreground text-xs">
-                    {new Date(c.updatedAt).toLocaleString()}
-                  </div>
-                </div>
-                <button
-                  aria-label="删除"
-                  className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-destructive group-hover:opacity-100"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteConversation(c.id);
+            conversations.map((c) => {
+              const pdfTitle =
+                c.pdfName?.trim() || (c.pdfId ? "已关联 PDF" : "未关联 PDF");
+
+              return (
+                <div
+                  className={cn(
+                    "group flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 transition-colors hover:bg-accent",
+                    c.id === currentId && "bg-accent",
+                  )}
+                  key={c.id}
+                  onClick={() => {
+                    onSelect(c.id);
+                    onOpenChange(false);
                   }}
-                  type="button"
                 >
-                  <Trash2 className="size-4" />
-                </button>
-              </div>
-            ))
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm">{c.title || "新对话"}</div>
+                    <div
+                      className="mt-1 flex min-w-0 items-center gap-1 text-muted-foreground text-xs"
+                      title={pdfTitle}
+                    >
+                      <FileText className="size-3 shrink-0" />
+                      <span className="truncate">PDF：{pdfTitle}</span>
+                    </div>
+                    <div className="mt-0.5 text-muted-foreground text-xs">
+                      {new Date(c.updatedAt).toLocaleString()}
+                    </div>
+                  </div>
+                  <button
+                    aria-label="删除"
+                    className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-destructive group-hover:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteConversation(c.id);
+                    }}
+                    type="button"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              );
+            })
           )}
         </div>
       </DialogContent>
