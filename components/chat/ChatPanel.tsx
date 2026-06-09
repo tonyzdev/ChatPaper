@@ -4,7 +4,14 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
-import { History, Quote, Settings, Sparkles, SquarePen } from "lucide-react";
+import {
+  Download,
+  History,
+  Quote,
+  Settings,
+  Sparkles,
+  SquarePen,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import {
@@ -22,6 +29,11 @@ import {
   AttachmentList,
 } from "@/components/chat/AttachmentList";
 import { CitationChips } from "@/components/chat/CitationChips";
+import {
+  conversationToMarkdown,
+  downloadMarkdown,
+  safeFileName,
+} from "@/lib/exportMarkdown";
 import { HistoryDialog } from "@/components/chat/HistoryDialog";
 import { SettingsDialog } from "@/components/chat/SettingsDialog";
 import { Button } from "@/components/ui/button";
@@ -392,6 +404,17 @@ export function ChatPanel() {
     }
   };
 
+  const handleExport = () => {
+    if (messages.length === 0) return;
+    const { currentId, conversations: convs } = useAppStore.getState();
+    const title = convs.find((c) => c.id === currentId)?.title || "ChatPaper 对话";
+    const md = conversationToMarkdown(messages, {
+      title,
+      pdfName: fileName ?? undefined,
+    });
+    downloadMarkdown(safeFileName(title), md);
+  };
+
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-background">
       {/* header：半透明毛玻璃，消息可滚到其下 */}
@@ -434,6 +457,17 @@ export function ChatPanel() {
         </div>
 
         <div className="pointer-events-auto flex items-center gap-0.5">
+          {messages.length > 0 ? (
+            <Button
+              aria-label="导出为 Markdown"
+              onClick={handleExport}
+              size="icon-sm"
+              title="导出当前对话为 Markdown"
+              variant="ghost"
+            >
+              <Download className="size-4" />
+            </Button>
+          ) : null}
           <Button
             aria-label="对话历史"
             onClick={() => setHistoryOpen(true)}
