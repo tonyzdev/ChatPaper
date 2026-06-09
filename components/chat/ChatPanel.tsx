@@ -4,7 +4,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
-import { History, Quote, Settings, SquarePen } from "lucide-react";
+import { History, Quote, Settings, Sparkles, SquarePen } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import {
@@ -34,6 +34,27 @@ import { useAppStore } from "@/store/useAppStore";
 function getMessageCitations(m: UIMessage): Citation[] | undefined {
   return (m.metadata as { citations?: Citation[] } | undefined)?.citations;
 }
+
+// 打开论文后的一键提问：降低「面对空对话框不知问什么」的门槛
+const QUICK_ACTIONS: { label: string; prompt: string }[] = [
+  {
+    label: "总结全文",
+    prompt: "请简洁总结这篇论文：研究问题、方法、主要发现与结论。",
+  },
+  {
+    label: "讲讲方法",
+    prompt:
+      "请详细讲讲这篇论文采用的方法 / 技术路线，说清关键步骤与设计动机。",
+  },
+  {
+    label: "有哪些局限",
+    prompt: "这篇论文有哪些局限、不足或值得商榷之处？",
+  },
+  {
+    label: "相关工作对比",
+    prompt: "这篇论文与已有相关工作相比，有哪些区别与贡献？",
+  },
+];
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -145,7 +166,6 @@ export function ChatPanel() {
   // 刷新后恢复上次会话的消息与当时的 PDF。
   // persist 存储是异步的（IndexedDB），挂载瞬间 state 可能还是默认值，
   // 所以恢复要等水合完成（已完成则立即执行）。
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅挂载时恢复一次
   useEffect(() => {
     const restore = () => {
       const { currentId: cid, conversations: convs } = useAppStore.getState();
@@ -161,6 +181,8 @@ export function ChatPanel() {
       return;
     }
     return useAppStore.persist.onFinishHydration(restore);
+    // 仅挂载时恢复一次，故意只依赖空数组（报错锚在依赖数组行，注释须紧贴）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 主模型不支持图像（deepseek）且配了视觉模型时，上传/粘贴图片即刻转写
@@ -317,6 +339,31 @@ export function ChatPanel() {
     setSendTick((n) => n + 1); // 触发滚动到底部
   };
 
+  // 快捷操作：直接发送预设问题（结合已解析的全文上下文）
+  const runQuickAction = (prompt: string) => {
+    if (!settings.apiKey.trim() && !settings.accessCode.trim()) {
+      setSettingsOpen(true);
+      return;
+    }
+    ensureConversation();
+    sendMessage(
+      { text: prompt },
+      {
+        body: {
+          provider: settings.provider,
+          apiKey: settings.apiKey,
+          accessCode: settings.accessCode,
+          baseURL: settings.baseURL,
+          model: settings.model,
+          deepseekThinking: settings.deepseekThinking,
+          fullText: pdfFullText ?? undefined,
+          pdfName: fileName ?? undefined,
+        },
+      },
+    );
+    setSendTick((n) => n + 1);
+  };
+
   const handleNewChat = () => {
     stop(); // 流式中开新对话：先停掉，否则后续 chunk 会写进新会话
     newConversation();
@@ -411,9 +458,15 @@ export function ChatPanel() {
         <Conversation>
           <ConversationContent className="px-5 pt-16">
             <AutoScrollOnSend tick={sendTick} />
-            {messages.length === 0
-              ? null
-              : messages.map((m) => {
+            {messages.length === 0 ? (
+              fileName ? (
+                <QuickActions
+                  hasFullText={Boolean(pdfFullText)}
+                  onPick={runQuickAction}
+                />
+              ) : null
+            ) : (
+              messages.map((m) => {
                   const msgCitations = getMessageCitations(m);
                   return (
                     <Message from={m.role} key={m.id}>
@@ -470,7 +523,8 @@ export function ChatPanel() {
                       </MessageContent>
                     </Message>
                   );
-                })}
+                })
+            )}
 
             {status === "submitted" && messages.at(-1)?.role !== "assistant" ? (
               <Message from="assistant">
@@ -594,6 +648,41 @@ function MessageCitations({ citations }: { citations: Citation[] }) {
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** 空会话 + 已加载 PDF 时的一键提问入口 */
+function QuickActions({
+  onPick,
+  hasFullText,
+}: {
+  onPick: (prompt: string) => void;
+  hasFullText: boolean;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 px-4 pt-12 text-center">
+      <Sparkles className="size-7 text-muted-foreground/60" />
+      <p className="text-muted-foreground text-sm">
+        从一个问题开始，或在下方直接输入
+      </p>
+      <div className="flex flex-wrap justify-center gap-2">
+        {QUICK_ACTIONS.map((a) => (
+          <Button
+            key={a.label}
+            onClick={() => onPick(a.prompt)}
+            size="sm"
+            variant="outline"
+          >
+            {a.label}
+          </Button>
+        ))}
+      </div>
+      {hasFullText ? null : (
+        <p className="text-[11px] text-muted-foreground/70">
+          提示：在左侧工具栏「解析全文」后，回答会更准确
+        </p>
+      )}
     </div>
   );
 }
