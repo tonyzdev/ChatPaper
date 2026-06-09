@@ -30,6 +30,8 @@ export interface TranslationSettings {
   model: string;
   /** DeepSeek 思考/推理模式（默认关） */
   deepseekThinking: boolean;
+  /** 翻译结果是否保留历史；false=右侧只显示最新一条译文（默认 true） */
+  keepHistory: boolean;
 }
 
 export interface OcrSettings {
@@ -196,6 +198,7 @@ export const useAppStore = create<AppState>()(
           baseURL: "",
           model: "deepseek-v4-flash",
           deepseekThinking: false,
+          keepHistory: true,
         },
         vision: {
           enabled: false,

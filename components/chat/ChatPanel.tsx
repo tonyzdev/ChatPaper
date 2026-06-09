@@ -38,6 +38,7 @@ import { HistoryDialog } from "@/components/chat/HistoryDialog";
 import { SettingsDialog } from "@/components/chat/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import { PromptBox } from "@/components/ui/chatgpt-prompt-input";
+import { Switch } from "@/components/ui/switch";
 import { normalizeMath } from "@/lib/markdown";
 import type { Citation } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -86,6 +87,7 @@ export function ChatPanel() {
   const addCitation = useAppStore((s) => s.addCitation);
   const clearCitations = useAppStore((s) => s.clearCitations);
   const settings = useAppStore((s) => s.settings);
+  const setSettings = useAppStore((s) => s.setSettings);
   const conversations = useAppStore((s) => s.conversations);
   const ensureConversation = useAppStore((s) => s.ensureConversation);
   const upsertCurrent = useAppStore((s) => s.upsertCurrent);
@@ -152,6 +154,10 @@ export function ChatPanel() {
         setSettingsOpen(true);
         return;
       }
+      // 仅当前模式：每次翻译前清掉上一条，右侧只显示最新译文
+      if (!settings.translation.keepHistory) {
+        setMessages([]);
+      }
       ensureConversation();
       sendMessage(
         {
@@ -173,7 +179,13 @@ export function ChatPanel() {
       );
       setSendTick((n) => n + 1);
     });
-  }, [settings, ensureConversation, sendMessage, setPendingTranslate]);
+  }, [
+    settings,
+    ensureConversation,
+    sendMessage,
+    setMessages,
+    setPendingTranslate,
+  ]);
 
   // 刷新后恢复上次会话的消息与当时的 PDF。
   // persist 存储是异步的（IndexedDB），挂载瞬间 state 可能还是默认值，
@@ -599,8 +611,20 @@ export function ChatPanel() {
         />
         </div>
       ) : (
-        <div className="shrink-0 px-5 pt-2 pb-4 text-center text-muted-foreground text-xs">
-          翻译模式：在左侧 PDF 划选文本即可自动翻译
+        <div className="flex shrink-0 flex-col items-center gap-2 px-5 pt-2 pb-4 text-muted-foreground text-xs">
+          <span>翻译模式：在左侧 PDF 划选文本即可自动翻译</span>
+          <label className="flex cursor-pointer select-none items-center gap-1.5">
+            <Switch
+              checked={settings.translation.keepHistory}
+              onCheckedChange={(c) =>
+                setSettings({
+                  translation: { ...settings.translation, keepHistory: c },
+                })
+              }
+              size="sm"
+            />
+            <span>保留翻译历史（关闭则只显示当前一条）</span>
+          </label>
         </div>
       )}
 
