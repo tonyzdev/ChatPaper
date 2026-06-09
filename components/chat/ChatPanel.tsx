@@ -114,7 +114,7 @@ export function ChatPanel() {
             model: settings.translation.model,
             deepseekThinking: settings.translation.deepseekThinking,
           };
-      if (!translationSettings.apiKey.trim()) {
+      if (!translationSettings.apiKey.trim() && !settings.accessCode.trim()) {
         setSettingsOpen(true);
         return;
       }
@@ -127,6 +127,7 @@ export function ChatPanel() {
           body: {
             provider: translationSettings.provider,
             apiKey: translationSettings.apiKey,
+            accessCode: settings.accessCode,
             baseURL: translationSettings.baseURL,
             model: translationSettings.model,
             deepseekThinking:
@@ -255,7 +256,8 @@ export function ChatPanel() {
   };
 
   const handleSend = () => {
-    if (!settings.apiKey.trim()) {
+    // 没填 Key 也没填站点口令 → 引导打开设置（填口令可用站点内置模型）
+    if (!settings.apiKey.trim() && !settings.accessCode.trim()) {
       setSettingsOpen(true);
       return;
     }
@@ -289,6 +291,7 @@ export function ChatPanel() {
           citations: sentCitations,
           provider: settings.provider,
           apiKey: settings.apiKey,
+          accessCode: settings.accessCode,
           baseURL: settings.baseURL,
           model: settings.model,
           imageTranscriptions,

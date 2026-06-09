@@ -1,3 +1,4 @@
+import { assertSafeBaseURL } from "@/lib/security";
 import { describeImage } from "@/lib/vision";
 
 export const maxDuration = 60;
@@ -21,8 +22,9 @@ export async function POST(req: Request) {
     const text = await describeImage(imageUrl, {
       apiKey: vision.apiKey,
       model: vision.model?.trim() || "qwen3-vl-flash",
+      // 客户端可传任意 baseURL，先过 SSRF 校验
       baseURL:
-        vision.baseURL?.trim() ||
+        assertSafeBaseURL(vision.baseURL) ||
         "https://dashscope.aliyuncs.com/compatible-mode/v1",
     });
     return Response.json({ ok: true, text });
