@@ -25,8 +25,12 @@ import { extractPdfText } from "@/lib/pdfText";
 import { cn } from "@/lib/utils";
 import { type PdfTextStatus, useAppStore } from "@/store/useAppStore";
 
-// pdf.js worker：用 CDN，且版本与 react-pdf 内置 pdfjs 对齐，避免 worker 版本错配
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// pdf.js worker：本地打包（new URL 静态资源引用，Turbopack/webpack 都会发射该文件），
+// 版本与 react-pdf 内置 pdfjs 永远一致，且不依赖 unpkg CDN（国内访问不稳、挂了阅读器全废）
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
 interface Popover {
   text: string;
@@ -62,8 +66,20 @@ export function PdfReader() {
     (s) => s.settings.ocr.enabled && s.settings.ocr.apiKey.trim().length > 0,
   );
   const [popover, setPopover] = useState<Popover | null>(null);
+  // 每页 scale=1 的基准尺寸，用于懒渲染占位（页面未渲染时也保持正确高度，滚动条不跳）
+  const [pageSizes, setPageSizes] = useState<{ width: number; height: number }[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<PDFDocumentProxy | null>(null);
+
+  const collectPageSizes = useCallback(async (pdf: PDFDocumentProxy) => {
+    const sizes: { width: number; height: number }[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const vp = page.getViewport({ scale: 1 });
+      sizes.push({ width: vp.width, height: vp.height });
+    }
+    if (docRef.current === pdf) setPageSizes(sizes); // 期间换了文件则丢弃
+  }, []);
 
   // 触控板双指捏合 = 带 ctrlKey 的 wheel。始终拦截以防整页被缩放；
   // 开关开启时把它转成 PDF 缩放，关闭时双指照常滚动。
@@ -327,20 +343,21 @@ export function PdfReader() {
             onLoadSuccess={(pdf) => {
               setNumPages(pdf.numPages);
               docRef.current = pdf;
+              setPageSizes([]);
+              void collectPageSizes(pdf);
               if (useAppStore.getState().settings.autoParseFullText) {
                 void runParse(pdf);
               }
             }}
           >
             {Array.from({ length: numPages }, (_, i) => (
-              <div className="shadow-md" data-page-number={i + 1} key={i}>
-                <Page
-                  pageNumber={i + 1}
-                  renderAnnotationLayer={false}
-                  renderTextLayer
-                  scale={scale}
-                />
-              </div>
+              <LazyPage
+                baseSize={pageSizes[i] ?? pageSizes[0]}
+                key={i}
+                pageNumber={i + 1}
+                rootRef={scrollRef}
+                scale={scale}
+              />
             ))}
           </Document>
         </div>
@@ -362,6 +379,60 @@ export function PdfReader() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 懒渲染单页：只有滚到视口附近（上下约 1.5 屏）才真正渲染 pdf.js canvas，
+ * 滚远后卸载回收内存 —— 大 PDF（百页级）不再一次性渲染所有页面。
+ * 占位 div 按真实页面尺寸 × scale 撑高，滚动条位置稳定；
+ * data-page-number 保留在外层 wrapper 上，划选引用的页码定位不受影响。
+ */
+function LazyPage({
+  pageNumber,
+  scale,
+  baseSize,
+  rootRef,
+}: {
+  pageNumber: number;
+  scale: number;
+  baseSize?: { width: number; height: number };
+  rootRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  // 首屏前两页直接渲染，避免 observer 首次回调前的空白
+  const [visible, setVisible] = useState(pageNumber <= 2);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => setVisible(entry.isIntersecting),
+      { root: rootRef.current, rootMargin: "150% 0px" },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [rootRef]);
+
+  // 尺寸未收集到时按 US Letter 比例估一个，避免占位高度为 0 导致全部页“可见”
+  const w = Math.ceil((baseSize?.width ?? 612) * scale);
+  const h = Math.ceil((baseSize?.height ?? 792) * scale);
+  const placeholder = <div style={{ width: w, height: h }} />;
+
+  return (
+    <div className="shadow-md" data-page-number={pageNumber} ref={ref}>
+      {visible ? (
+        <Page
+          loading={placeholder}
+          pageNumber={pageNumber}
+          renderAnnotationLayer={false}
+          renderTextLayer
+          scale={scale}
+        />
+      ) : (
+        placeholder
+      )}
     </div>
   );
 }
