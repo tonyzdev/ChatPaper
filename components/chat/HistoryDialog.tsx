@@ -14,14 +14,16 @@ export function HistoryDialog({
   open,
   onOpenChange,
   onSelect,
+  onDelete,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (id: string) => void;
+  /** 删除交给父级处理：删除当前会话时父级还需同步清空聊天区 */
+  onDelete: (id: string) => void;
 }) {
   const conversations = useAppStore((s) => s.conversations);
   const currentId = useAppStore((s) => s.currentId);
-  const deleteConversation = useAppStore((s) => s.deleteConversation);
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -70,7 +72,7 @@ export function HistoryDialog({
                     className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-destructive group-hover:opacity-100"
                     onClick={(e) => {
                       e.stopPropagation();
-                      deleteConversation(c.id);
+                      onDelete(c.id);
                     }}
                     type="button"
                   >
