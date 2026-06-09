@@ -5,10 +5,12 @@ import {
   FileSearch,
   FileText,
   FileUp,
+  Highlighter,
   Leaf,
   Moon,
   Quote,
   Sun,
+  Trash2,
   X,
   ZoomIn,
   ZoomOut,
@@ -21,7 +23,10 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { loadAnnotations } from "@/lib/annotationStore";
+import { type PageRect, toPageRects } from "@/lib/annotations";
 import { extractPdfText } from "@/lib/pdfText";
+import type { Annotation } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { type PdfTextStatus, useAppStore } from "@/store/useAppStore";
 
@@ -37,6 +42,16 @@ interface Popover {
   page: number;
   top: number;
   left: number;
+  /** 选区相对页面的百分比矩形，用于保存高亮 */
+  rects: PageRect[];
+}
+
+/** 点击已有高亮后弹出的编辑框状态（相对滚动容器定位） */
+interface ActiveAnno {
+  id: string;
+  note: string;
+  top: number;
+  left: number;
 }
 
 export function PdfReader() {
@@ -50,6 +65,28 @@ export function PdfReader() {
   const mode = useAppStore((s) => s.mode);
   const setPendingTranslate = useAppStore((s) => s.setPendingTranslate);
   const pdfJump = useAppStore((s) => s.pdfJump);
+  const pdfId = useAppStore((s) => s.pdfId);
+  const annotations = useAppStore((s) => s.annotations);
+  const setAnnotations = useAppStore((s) => s.setAnnotations);
+  const addAnnotation = useAppStore((s) => s.addAnnotation);
+  const removeAnnotation = useAppStore((s) => s.removeAnnotation);
+  const updateAnnotation = useAppStore((s) => s.updateAnnotation);
+  const [activeAnno, setActiveAnno] = useState<ActiveAnno | null>(null);
+
+  // 切换 / 打开 PDF 时载入该 PDF 的高亮（pdfId 变化即重载；无 PDF 清空）
+  useEffect(() => {
+    if (!pdfId) {
+      setAnnotations([]);
+      return;
+    }
+    let alive = true;
+    void loadAnnotations(pdfId).then((items) => {
+      if (alive) setAnnotations(items);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [pdfId, setAnnotations]);
 
   const [scale, setScale] = useState(1.2);
   const pinchZoom = useAppStore((s) => s.pdfPinchZoom);
@@ -245,11 +282,22 @@ export function PdfReader() {
     }
     const r = range.getBoundingClientRect();
     const c = container.getBoundingClientRect();
+    // 选区相对所在页的百分比矩形（用于保存高亮，与缩放无关）
+    const pageEl = container.querySelector<HTMLElement>(
+      `[data-page-number="${page}"]`,
+    );
+    const rects = pageEl
+      ? toPageRects(
+          Array.from(range.getClientRects()),
+          pageEl.getBoundingClientRect(),
+        )
+      : [];
     setPopover({
       text,
       page,
       top: r.top - c.top + container.scrollTop - 8,
       left: r.left - c.left + container.scrollLeft + r.width / 2,
+      rects,
     });
   }, [mode, setPendingTranslate]);
 
@@ -259,6 +307,34 @@ export function PdfReader() {
     window.getSelection()?.removeAllRanges();
     setPopover(null);
   }, [popover, addCitation, fileName]);
+
+  const confirmHighlight = useCallback(() => {
+    if (!popover || popover.rects.length === 0 || !pdfId) return;
+    addAnnotation({
+      pdfId,
+      page: popover.page,
+      rects: popover.rects,
+      text: popover.text,
+    });
+    window.getSelection()?.removeAllRanges();
+    setPopover(null);
+  }, [popover, addAnnotation, pdfId]);
+
+  // 点击已有高亮块 → 在点击处弹出编辑框（批注 / 删除）
+  const handleActivateAnno = useCallback(
+    (a: Annotation, clientX: number, clientY: number) => {
+      const container = scrollRef.current;
+      if (!container) return;
+      const c = container.getBoundingClientRect();
+      setActiveAnno({
+        id: a.id,
+        note: a.note ?? "",
+        top: clientY - c.top + container.scrollTop,
+        left: clientX - c.left + container.scrollLeft,
+      });
+    },
+    [],
+  );
 
   if (!fileUrl) {
     return <Dropzone onPick={pickFile} />;
@@ -392,8 +468,10 @@ export function PdfReader() {
           >
             {Array.from({ length: numPages }, (_, i) => (
               <LazyPage
+                annotations={annotations.filter((a) => a.page === i + 1)}
                 baseSize={pageSizes[i] ?? pageSizes[0]}
                 key={i}
+                onActivate={handleActivateAnno}
                 pageNumber={i + 1}
                 rootRef={scrollRef}
                 scale={scale}
@@ -404,7 +482,7 @@ export function PdfReader() {
 
         {popover && (
           <div
-            className="absolute z-20 -translate-x-1/2 -translate-y-full"
+            className="absolute z-20 flex -translate-x-1/2 -translate-y-full gap-1"
             style={{ top: popover.top, left: popover.left }}
           >
             <Button
@@ -414,8 +492,67 @@ export function PdfReader() {
               size="sm"
             >
               <Quote className="size-3.5" />
-              引用到对话
+              引用
             </Button>
+            {popover.rects.length > 0 ? (
+              <Button
+                className="shadow-lg"
+                onClick={confirmHighlight}
+                onMouseDown={(e) => e.preventDefault()}
+                size="sm"
+                variant="secondary"
+              >
+                <Highlighter className="size-3.5" />
+                高亮
+              </Button>
+            ) : null}
+          </div>
+        )}
+
+        {activeAnno && (
+          <div
+            className="absolute z-30 w-56 -translate-x-1/2 translate-y-2 rounded-lg border bg-background p-2 shadow-xl"
+            style={{ top: activeAnno.top, left: activeAnno.left }}
+          >
+            <textarea
+              className="h-16 w-full resize-none rounded border bg-transparent p-1.5 text-xs outline-none focus:ring-1 focus:ring-primary"
+              onChange={(e) =>
+                setActiveAnno({ ...activeAnno, note: e.target.value })
+              }
+              placeholder="加批注…"
+              value={activeAnno.note}
+            />
+            <div className="mt-1.5 flex items-center justify-between">
+              <Button
+                aria-label="删除高亮"
+                onClick={() => {
+                  removeAnnotation(activeAnno.id);
+                  setActiveAnno(null);
+                }}
+                size="sm"
+                variant="ghost"
+              >
+                <Trash2 className="size-3.5 text-destructive" />
+              </Button>
+              <div className="flex gap-1">
+                <Button
+                  onClick={() => setActiveAnno(null)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  取消
+                </Button>
+                <Button
+                  onClick={() => {
+                    updateAnnotation(activeAnno.id, { note: activeAnno.note });
+                    setActiveAnno(null);
+                  }}
+                  size="sm"
+                >
+                  保存
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -434,11 +571,15 @@ function LazyPage({
   scale,
   baseSize,
   rootRef,
+  annotations,
+  onActivate,
 }: {
   pageNumber: number;
   scale: number;
   baseSize?: { width: number; height: number };
   rootRef: React.RefObject<HTMLDivElement | null>;
+  annotations: Annotation[];
+  onActivate: (a: Annotation, clientX: number, clientY: number) => void;
 }) {
   // 首屏前两页直接渲染，避免 observer 首次回调前的空白
   const [visible, setVisible] = useState(pageNumber <= 2);
@@ -461,7 +602,7 @@ function LazyPage({
   const placeholder = <div style={{ width: w, height: h }} />;
 
   return (
-    <div className="shadow-md" data-page-number={pageNumber} ref={ref}>
+    <div className="relative shadow-md" data-page-number={pageNumber} ref={ref}>
       {visible ? (
         <Page
           loading={placeholder}
@@ -473,6 +614,27 @@ function LazyPage({
       ) : (
         placeholder
       )}
+      {annotations.length > 0 ? (
+        <div className="pointer-events-none absolute inset-0">
+          {annotations.flatMap((a) =>
+            a.rects.map((r, idx) => (
+              <button
+                className="pointer-events-auto absolute bg-yellow-300/40 transition-colors hover:bg-yellow-300/60"
+                key={`${a.id}-${idx}`}
+                onClick={(e) => onActivate(a, e.clientX, e.clientY)}
+                style={{
+                  left: `${r.x * 100}%`,
+                  top: `${r.y * 100}%`,
+                  width: `${r.w * 100}%`,
+                  height: `${r.h * 100}%`,
+                }}
+                title={a.note || a.text}
+                type="button"
+              />
+            )),
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
