@@ -43,7 +43,7 @@ const isImagePart = (p: UIMessage["parts"][number]) =>
  * 非文本 part（图片等）按固定 2000 字符估算；截断起点对齐到 user 消息，
  * 避免发给模型的历史以 assistant 开头。
  */
-function truncateHistory(
+export function truncateHistory(
   messages: UIMessage[],
   charBudget = 120_000,
 ): UIMessage[] {
