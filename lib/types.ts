@@ -9,6 +9,21 @@ export interface Citation {
   source: string;
 }
 
+/** PDF 上的一条持久化高亮（带选区矩形、可选批注） */
+export interface Annotation {
+  id: string;
+  pdfId: string;
+  /** 所在页码（从 1 开始） */
+  page: number;
+  /** 选区矩形，均为相对所在页的百分比（0~1），与缩放无关 */
+  rects: { x: number; y: number; w: number; h: number }[];
+  /** 选中的文本 */
+  text: string;
+  /** 可选批注 */
+  note?: string;
+  createdAt: number;
+}
+
 /** 前端随消息发给 /api/chat 的额外字段 */
 export interface ChatRequestBody {
   citations?: Citation[];

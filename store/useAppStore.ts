@@ -5,9 +5,10 @@ import {
   persist,
   type StateStorage,
 } from "zustand/middleware";
+import { saveAnnotations } from "@/lib/annotationStore";
 import { kvDel, kvGet, kvSet } from "@/lib/kvStore";
 import { deletePdf, loadPdf, savePdf } from "@/lib/pdfStore";
-import type { Citation } from "@/lib/types";
+import type { Annotation, Citation } from "@/lib/types";
 
 export type Provider = "anthropic" | "openai" | "deepseek";
 
@@ -124,6 +125,8 @@ interface AppState {
   pdfId: string | null;
   numPages: number;
   citations: Citation[];
+  /** 当前 PDF 的高亮批注（内存；按 pdfId 单独存 IndexedDB，不进 persist） */
+  annotations: Annotation[];
   /** 当前 PDF 解析出的全文（不持久化，按需重新解析） */
   pdfFullText: string | null;
   pdfTextStatus: PdfTextStatus;
@@ -153,6 +156,11 @@ interface AppState {
   addCitation: (c: Omit<Citation, "id">) => void;
   removeCitation: (id: string) => void;
   clearCitations: () => void;
+  /** 切换 PDF 时由阅读器从 IndexedDB 载入该 PDF 的高亮 */
+  setAnnotations: (items: Annotation[]) => void;
+  addAnnotation: (a: Omit<Annotation, "id" | "createdAt">) => void;
+  removeAnnotation: (id: string) => void;
+  updateAnnotation: (id: string, patch: Pick<Annotation, "note">) => void;
   /** 写入/清空全文（传 null 清空，状态回 idle） */
   setPdfFullText: (text: string | null) => void;
   setPdfTextStatus: (status: PdfTextStatus, progress?: number) => void;
@@ -187,6 +195,7 @@ export const useAppStore = create<AppState>()(
       pdfId: null,
       numPages: 0,
       citations: [],
+      annotations: [],
       pdfFullText: null,
       pdfTextStatus: "idle",
       pdfTextProgress: 0,
@@ -290,6 +299,33 @@ export const useAppStore = create<AppState>()(
       removeCitation: (id) =>
         set((s) => ({ citations: s.citations.filter((x) => x.id !== id) })),
       clearCitations: () => set({ citations: [] }),
+      setAnnotations: (items) => set({ annotations: items }),
+      addAnnotation: (a) => {
+        const item: Annotation = {
+          ...a,
+          id: crypto.randomUUID(),
+          createdAt: Date.now(),
+        };
+        set((s) => {
+          const annotations = [...s.annotations, item];
+          if (s.pdfId) void saveAnnotations(s.pdfId, annotations);
+          return { annotations };
+        });
+      },
+      removeAnnotation: (id) =>
+        set((s) => {
+          const annotations = s.annotations.filter((x) => x.id !== id);
+          if (s.pdfId) void saveAnnotations(s.pdfId, annotations);
+          return { annotations };
+        }),
+      updateAnnotation: (id, patch) =>
+        set((s) => {
+          const annotations = s.annotations.map((x) =>
+            x.id === id ? { ...x, ...patch } : x,
+          );
+          if (s.pdfId) void saveAnnotations(s.pdfId, annotations);
+          return { annotations };
+        }),
       setPdfFullText: (text) =>
         set({
           pdfFullText: text,
