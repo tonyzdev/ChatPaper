@@ -141,16 +141,25 @@ export function ChatPanel() {
     });
   }, [settings, ensureConversation, sendMessage, setPendingTranslate]);
 
-  // 刷新后恢复上次会话的消息与当时的 PDF
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 仅挂载时恢复一次
+  // 刷新后恢复上次会话的消息与当时的 PDF。
+  // persist 存储是异步的（IndexedDB），挂载瞬间 state 可能还是默认值，
+  // 所以恢复要等水合完成（已完成则立即执行）。
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅挂载时恢复一次
   useEffect(() => {
-    const { currentId: cid, conversations: convs } = useAppStore.getState();
-    if (!cid) return;
-    const conv = convs.find((c) => c.id === cid);
-    if (conv) {
-      setMessages(conv.messages);
-      void loadConversationPdf(conv);
+    const restore = () => {
+      const { currentId: cid, conversations: convs } = useAppStore.getState();
+      if (!cid) return;
+      const conv = convs.find((c) => c.id === cid);
+      if (conv) {
+        setMessages(conv.messages);
+        void loadConversationPdf(conv);
+      }
+    };
+    if (useAppStore.persist.hasHydrated()) {
+      restore();
+      return;
     }
+    return useAppStore.persist.onFinishHydration(restore);
   }, []);
 
   // 主模型不支持图像（deepseek）且配了视觉模型时，上传/粘贴图片即刻转写
