@@ -38,6 +38,14 @@ import { HistoryDialog } from "@/components/chat/HistoryDialog";
 import { SettingsDialog } from "@/components/chat/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import { PromptBox } from "@/components/ui/chatgpt-prompt-input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { normalizeMath } from "@/lib/markdown";
 import type { Citation } from "@/lib/types";
@@ -100,6 +108,9 @@ export function ChatPanel() {
   const setPendingTranslate = useAppStore((s) => s.setPendingTranslate);
   const pdfFullText = useAppStore((s) => s.pdfFullText);
   const fileName = useAppStore((s) => s.fileName);
+  const openPdf = useAppStore((s) => s.openPdf);
+  const pendingPdf = useAppStore((s) => s.pendingPdf);
+  const setPendingPdf = useAppStore((s) => s.setPendingPdf);
 
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -509,6 +520,7 @@ export function ChatPanel() {
                 <QuickActions
                   hasFullText={Boolean(pdfFullText)}
                   onPick={runQuickAction}
+                  pdfName={fileName}
                 />
               ) : null
             ) : (
@@ -628,6 +640,49 @@ export function ChatPanel() {
         </div>
       )}
 
+      {/* 上传新 PDF 撞上「当前对话已在进行」时，让用户选开新对话还是加到当前 */}
+      <Dialog
+        onOpenChange={(o) => {
+          if (!o) setPendingPdf(null);
+        }}
+        open={Boolean(pendingPdf)}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>当前对话已在进行中</DialogTitle>
+            <DialogDescription className="truncate" title={pendingPdf?.name}>
+              新 PDF「{pendingPdf?.name}」要怎么处理？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              onClick={() => {
+                const f = pendingPdf;
+                setPendingPdf(null);
+                if (f) openPdf(f); // 关联到当前会话（覆盖原 PDF）
+              }}
+              variant="outline"
+            >
+              加到当前对话
+            </Button>
+            <Button
+              onClick={() => {
+                const f = pendingPdf;
+                setPendingPdf(null);
+                stop();
+                newConversation();
+                setMessages([]);
+                clearAttachments();
+                clearCitations();
+                if (f) openPdf(f); // currentId 已清空，下次发消息再新建会话
+              }}
+            >
+              开新对话
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <SettingsDialog onOpenChange={setSettingsOpen} open={settingsOpen} />
       <HistoryDialog
         onDelete={handleDeleteConversation}
@@ -714,13 +769,20 @@ function MessageCitations({ citations }: { citations: Citation[] }) {
 function QuickActions({
   onPick,
   hasFullText,
+  pdfName,
 }: {
   onPick: (prompt: string) => void;
   hasFullText: boolean;
+  pdfName: string | null;
 }) {
   return (
     <div className="flex flex-col items-center gap-3 px-4 pt-12 text-center">
       <Sparkles className="size-7 text-muted-foreground/60" />
+      {pdfName ? (
+        <p className="max-w-xs truncate font-medium text-sm" title={pdfName}>
+          {pdfName}
+        </p>
+      ) : null}
       <p className="text-muted-foreground text-sm">
         从一个问题开始，或在下方直接输入
       </p>

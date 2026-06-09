@@ -100,7 +100,15 @@ export function PdfReader() {
 
   const pickFile = useCallback(
     (file?: File | null) => {
-      if (file && file.type === "application/pdf") openPdf(file);
+      if (!file || file.type !== "application/pdf") return;
+      const st = useAppStore.getState();
+      const conv = st.conversations.find((c) => c.id === st.currentId);
+      // 当前对话已经在聊、且已绑了 PDF：让用户选「开新对话」还是「加到当前」
+      if ((conv?.messages.length ?? 0) > 0 && st.pdfId) {
+        st.setPendingPdf(file);
+      } else {
+        openPdf(file);
+      }
     },
     [openPdf],
   );
