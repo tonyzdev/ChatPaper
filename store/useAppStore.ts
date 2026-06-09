@@ -1,6 +1,11 @@
 import type { UIMessage } from "ai";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import {
+  createJSONStorage,
+  persist,
+  type StateStorage,
+} from "zustand/middleware";
+import { kvDel, kvGet, kvSet } from "@/lib/kvStore";
 import { deletePdf, loadPdf, savePdf } from "@/lib/pdfStore";
 import type { Citation } from "@/lib/types";
 
@@ -76,6 +81,36 @@ function deriveTitle(messages: UIMessage[]): string {
 }
 
 let pdfLoadRequest = 0;
+
+/**
+ * persist 的异步 storage：IndexedDB 为主。首次读不到时尝试从旧版
+ * localStorage（同名 key）迁移一次，老用户的设置与会话无缝带过来。
+ * SSR 阶段（无 window）全部 no-op，水合在客户端异步完成 ——
+ * 需要「恢复后才执行」的逻辑请用 useAppStore.persist.onFinishHydration。
+ * 注意必须定义在 create() 之前：createJSONStorage 会立即调用工厂函数。
+ */
+const idbStateStorage: StateStorage = {
+  getItem: async (name) => {
+    if (typeof window === "undefined") return null;
+    const value = await kvGet(name);
+    if (value != null) return value;
+    const legacy = window.localStorage.getItem(name);
+    if (legacy != null) {
+      await kvSet(name, legacy);
+      window.localStorage.removeItem(name);
+      return legacy;
+    }
+    return null;
+  },
+  setItem: async (name, value) => {
+    if (typeof window === "undefined") return;
+    await kvSet(name, value);
+  },
+  removeItem: async (name) => {
+    if (typeof window === "undefined") return;
+    await kvDel(name);
+  },
+};
 
 interface AppState {
   // —— PDF / 引用（不持久化）——
@@ -410,15 +445,7 @@ export const useAppStore = create<AppState>()(
           },
         };
       },
-      storage: createJSONStorage(() =>
-        typeof window !== "undefined"
-          ? window.localStorage
-          : {
-              getItem: () => null,
-              setItem: () => {},
-              removeItem: () => {},
-            },
-      ),
+      storage: createJSONStorage(() => idbStateStorage),
     },
   ),
 );
