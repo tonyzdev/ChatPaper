@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeMath } from "@/lib/markdown";
+import { linkifyPageRefs, normalizeMath } from "@/lib/markdown";
 
 describe("normalizeMath", () => {
   it("把块级 \\[...\\] 转成 $$...$$", () => {
@@ -31,5 +31,31 @@ describe("normalizeMath", () => {
 
   it("无公式时原样返回", () => {
     expect(normalizeMath("普通文本 $a+b$")).toBe("普通文本 $a+b$");
+  });
+});
+
+describe("linkifyPageRefs", () => {
+  it("把 【P3】 转成页内锚点链接", () => {
+    expect(linkifyPageRefs("见方法部分【P3】。")).toBe(
+      "见方法部分[📄 p.3](#cp-page-3)。",
+    );
+  });
+
+  it("容忍小写与空格 / 点：【p. 12】", () => {
+    expect(linkifyPageRefs("【p. 12】")).toBe("[📄 p.12](#cp-page-12)");
+  });
+
+  it("一段里多个引用都转换", () => {
+    expect(linkifyPageRefs("如【P1】与【P2】所述")).toBe(
+      "如[📄 p.1](#cp-page-1)与[📄 p.2](#cp-page-2)所述",
+    );
+  });
+
+  it("不动代码块里的同形文本", () => {
+    expect(linkifyPageRefs("`【P3】` 是标记")).toBe("`【P3】` 是标记");
+  });
+
+  it("无页码引用时原样返回", () => {
+    expect(linkifyPageRefs("普通文本【备注】")).toBe("普通文本【备注】");
   });
 });

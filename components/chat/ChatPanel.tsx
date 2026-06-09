@@ -12,7 +12,7 @@ import {
   Sparkles,
   SquarePen,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ComponentProps, useEffect, useMemo, useState } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import {
   Conversation,
@@ -47,7 +47,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { normalizeMath } from "@/lib/markdown";
+import { linkifyPageRefs, normalizeMath } from "@/lib/markdown";
 import type { Citation } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/useAppStore";
@@ -111,6 +111,7 @@ export function ChatPanel() {
   const openPdf = useAppStore((s) => s.openPdf);
   const pendingPdf = useAppStore((s) => s.pendingPdf);
   const setPendingPdf = useAppStore((s) => s.setPendingPdf);
+  const jumpToPage = useAppStore((s) => s.jumpToPage);
 
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -438,6 +439,35 @@ export function ChatPanel() {
     downloadMarkdown(safeFileName(title), md);
   };
 
+  // 把 AI 回答里的页码引用链接（#cp-page-N）渲染成按钮，点击通知阅读器跳转高亮；
+  // 其他链接照常新开页。引用稳定即可（MessageResponse 的 memo 只比较 children）。
+  const markdownComponents = useMemo(
+    () => ({
+      a: ({ href, children }: ComponentProps<"a">) => {
+        if (href?.startsWith("#cp-page-")) {
+          const page = Number(href.slice("#cp-page-".length));
+          return (
+            <button
+              className="mx-0.5 rounded bg-primary/10 px-1 text-primary text-xs hover:bg-primary/20"
+              onClick={() => {
+                if (page > 0) jumpToPage(page);
+              }}
+              type="button"
+            >
+              {children}
+            </button>
+          );
+        }
+        return (
+          <a href={href} rel="noreferrer" target="_blank">
+            {children}
+          </a>
+        );
+      },
+    }),
+    [jumpToPage],
+  );
+
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-background">
       {/* header：半透明毛玻璃，消息可滚到其下 */}
@@ -547,8 +577,11 @@ export function ChatPanel() {
                           }
                           if (part.type === "text") {
                             return (
-                              <MessageResponse key={`${m.id}-${i}`}>
-                                {normalizeMath(part.text)}
+                              <MessageResponse
+                                components={markdownComponents}
+                                key={`${m.id}-${i}`}
+                              >
+                                {linkifyPageRefs(normalizeMath(part.text))}
                               </MessageResponse>
                             );
                           }
