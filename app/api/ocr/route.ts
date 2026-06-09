@@ -1,4 +1,5 @@
 import { ocrImage } from "@/lib/ocr";
+import { assertSafeBaseURL } from "@/lib/security";
 
 export const maxDuration = 60;
 
@@ -20,7 +21,8 @@ export async function POST(req: Request) {
   try {
     const text = await ocrImage(imageUrl, {
       apiKey: ocr.apiKey,
-      baseURL: ocr.baseURL?.trim() || "https://api.siliconflow.cn/v1",
+      // 客户端可传任意 baseURL，先过 SSRF 校验
+      baseURL: assertSafeBaseURL(ocr.baseURL) || "https://api.siliconflow.cn/v1",
       model: ocr.model?.trim() || "deepseek-ai/DeepSeek-OCR",
     });
     return Response.json({ ok: true, text });

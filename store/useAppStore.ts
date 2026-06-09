@@ -38,6 +38,8 @@ export interface OcrSettings {
 export interface Settings {
   provider: Provider;
   apiKey: string;
+  /** 站点访问口令：自部署服务端配置 ACCESS_CODE 后，不填 API Key 走站点内置模型时需要 */
+  accessCode: string;
   /** OpenAI/Anthropic 兼容接口的自定义 Base URL；留空使用官方默认 */
   baseURL: string;
   /** 留空则用各 provider 的默认模型 */
@@ -149,6 +151,7 @@ export const useAppStore = create<AppState>()(
       settings: {
         provider: "anthropic",
         apiKey: "",
+        accessCode: "",
         baseURL: "",
         model: "",
         translation: {

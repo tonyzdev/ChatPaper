@@ -76,6 +76,7 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
 
   const [provider, setProvider] = useState<Provider>(settings.provider);
   const [apiKey, setApiKey] = useState(settings.apiKey);
+  const [accessCode, setAccessCode] = useState(settings.accessCode);
   const [baseURL, setBaseURL] = useState(settings.baseURL);
   const [model, setModel] = useState(settings.model);
   const [translation, setTranslation] = useState<TranslationSettings>(
@@ -91,6 +92,7 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
     setSettings({
       provider,
       apiKey: apiKey.trim(),
+      accessCode: accessCode.trim(),
       baseURL: baseURL.trim(),
       model: model.trim(),
       translation: {
@@ -114,6 +116,7 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
 
   const canSave =
     apiKey.trim().length > 0 ||
+    accessCode.trim().length > 0 ||
     (!translation.useMainModel && translation.apiKey.trim().length > 0) ||
     (ocr.enabled && ocr.apiKey.trim().length > 0);
 
@@ -177,6 +180,16 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
             placeholder={KEY_HINT[provider]}
             type="password"
             value={apiKey}
+          />
+        </Field>
+
+        <Field label="站点访问口令（不填 API Key、用站点内置模型时需要；自带 Key 可留空）">
+          <Input
+            autoComplete="off"
+            onChange={(e) => setAccessCode(e.target.value)}
+            placeholder="站长在服务端配置的 ACCESS_CODE"
+            type="password"
+            value={accessCode}
           />
         </Field>
 

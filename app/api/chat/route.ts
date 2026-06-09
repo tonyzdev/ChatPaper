@@ -1,5 +1,6 @@
 import {
   convertToModelMessages,
+  type LanguageModel,
   type ModelMessage,
   streamText,
   type UIMessage,
@@ -10,6 +11,7 @@ import {
   SYSTEM_PROMPT,
 } from "@/lib/citations";
 import { resolveModel } from "@/lib/models";
+import { isServerKeyAllowed } from "@/lib/security";
 import type { Citation } from "@/lib/types";
 
 export const maxDuration = 60;
@@ -22,6 +24,8 @@ interface ChatBody {
   apiKey?: string;
   baseURL?: string;
   model?: string;
+  // 站点访问口令：服务端配置 ACCESS_CODE 后，使用站点内置 Key 时必须携带
+  accessCode?: string;
   // DeepSeek 不支持图像：前端用视觉模型转写好后随消息发来（按最后一条 user 的图顺序）
   imageTranscriptions?: (string | null)[];
   deepseekThinking?: boolean;
@@ -41,11 +45,29 @@ export async function POST(req: Request) {
     apiKey,
     baseURL,
     model,
+    accessCode,
     imageTranscriptions,
     deepseekThinking,
     fullText,
     pdfName,
   }: ChatBody = await req.json();
+
+  if (!isServerKeyAllowed(apiKey, accessCode)) {
+    return Response.json(
+      { error: "本站已启用访问口令：请在设置中填入正确口令，或填写你自己的 API Key" },
+      { status: 401 },
+    );
+  }
+
+  let chatModel: LanguageModel;
+  try {
+    chatModel = resolveModel({ provider, apiKey, baseURL, model });
+  } catch (e) {
+    return Response.json(
+      { error: e instanceof Error ? e.message : String(e) },
+      { status: 400 },
+    );
+  }
 
   let working = messages;
 
@@ -110,7 +132,7 @@ export async function POST(req: Request) {
   const system = docBlock ? `${SYSTEM_PROMPT}\n\n${docBlock}` : SYSTEM_PROMPT;
 
   const result = streamText({
-    model: resolveModel({ provider, apiKey, baseURL, model }),
+    model: chatModel,
     system,
     messages: modelMessages,
     // DeepSeek V4：thinking 显式开/关（默认关，开启会输出 reasoning 思考过程）
