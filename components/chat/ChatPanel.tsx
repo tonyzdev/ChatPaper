@@ -26,20 +26,13 @@ import { HistoryDialog } from "@/components/chat/HistoryDialog";
 import { SettingsDialog } from "@/components/chat/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import { PromptBox } from "@/components/ui/chatgpt-prompt-input";
+import { normalizeMath } from "@/lib/markdown";
 import type { Citation } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/useAppStore";
 
 function getMessageCitations(m: UIMessage): Citation[] | undefined {
   return (m.metadata as { citations?: Citation[] } | undefined)?.citations;
-}
-
-// AI（尤其 DeepSeek）常用 \(...\) / \[...\] 包裹公式，而 Streamdown/KaTeX 只认
-// $...$ / $$...$$，这里统一转换，确保公式能渲染。
-function normalizeMath(s: string): string {
-  return s
-    .replace(/\\\[([\s\S]*?)\\\]/g, (_, m: string) => `$$${m}$$`)
-    .replace(/\\\(([\s\S]*?)\\\)/g, (_, m: string) => `$${m}$`);
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -387,8 +380,7 @@ export function ChatPanel() {
         </div>
       </div>
 
-      {/* 消息区：在 AI 回复里划选可引用 */}
-      {/* biome-ignore lint/a11y: 划选监听用于浮钮，非交互控件 */}
+      {/* 消息区：在 AI 回复里划选可引用（onMouseUp 仅做划选监听，非交互控件） */}
       <div className="flex min-h-0 flex-1 flex-col" onMouseUp={handleReplySelect}>
         <Conversation>
           <ConversationContent className="px-5 pt-16">

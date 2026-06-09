@@ -14,7 +14,7 @@ const MAX_TOKENS = 4096;
  * 清掉 DeepSeek-OCR grounding 模式残留的特殊标记与坐标框，
  * 让结果是干净的 Markdown 文本。
  */
-function cleanOcrText(raw: string): string {
+export function cleanOcrText(raw: string): string {
   return raw
     .replace(/<\|[^|]*\|>/g, "") // <|ref|> <|/ref|> <|det|> <|grounding|> 等
     .replace(/\[\[[\d,\s]+\]\]/g, "") // [[x1,y1,x2,y2]] 坐标框
