@@ -127,7 +127,8 @@ export function PdfReader() {
     [setPdfTextStatus, setPdfFullText, setPdfTextMode],
   );
 
-  // 扫描件：逐页渲染成图片，交给 DeepSeek-OCR 识别，结果走同一套全文上下文管线
+  // 扫描件：逐页渲染成图片，交给 DeepSeek-OCR 识别，结果走同一套全文上下文管线。
+  // 3 路并发（再高容易撞 OCR 服务的速率限制），结果按页序写回 pages 数组
   const ocrPdf = useCallback(
     async (pdf: PDFDocumentProxy) => {
       const ocr = useAppStore.getState().settings.ocr;
@@ -137,23 +138,33 @@ export function PdfReader() {
       setPdfTextStatus("parsing", 0);
       try {
         const total = pdf.numPages;
-        const pages: string[] = [];
-        for (let i = 1; i <= total; i++) {
-          const imageUrl = await renderPageToImage(pdf, i);
-          const res = await fetch("/api/ocr", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ imageUrl, ocr }),
-          });
-          const data = (await res.json()) as {
-            ok: boolean;
-            text?: string;
-            error?: string;
-          };
-          if (!data.ok) throw new Error(data.error || "OCR 失败");
-          pages.push((data.text || "").trim());
-          setPdfTextStatus("parsing", i);
-        }
+        const pages: string[] = new Array(total).fill("");
+        let nextPage = 1;
+        let done = 0;
+        const worker = async () => {
+          while (true) {
+            const pageNum = nextPage++;
+            if (pageNum > total) return;
+            const imageUrl = await renderPageToImage(pdf, pageNum);
+            const res = await fetch("/api/ocr", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ imageUrl, ocr }),
+            });
+            const data = (await res.json()) as {
+              ok: boolean;
+              text?: string;
+              error?: string;
+            };
+            if (!data.ok) throw new Error(data.error || "OCR 失败");
+            pages[pageNum - 1] = (data.text || "").trim();
+            done++;
+            setPdfTextStatus("parsing", done);
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(3, total) }, () => worker()),
+        );
         setPdfFullText(pages.join("\n\n").replace(/\n{3,}/g, "\n\n").trim());
       } catch {
         setPdfTextStatus("error");

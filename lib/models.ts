@@ -4,8 +4,8 @@ import { createOpenAI, openai } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 import { assertSafeBaseURL } from "./security";
 
-const DEFAULT_ANTHROPIC = "claude-sonnet-4-5";
-const DEFAULT_OPENAI = "gpt-4o-mini";
+const DEFAULT_ANTHROPIC = "claude-sonnet-4-6";
+const DEFAULT_OPENAI = "gpt-5.4-mini";
 const DEFAULT_DEEPSEEK = "deepseek-v4-flash";
 
 export interface ModelRequest {
