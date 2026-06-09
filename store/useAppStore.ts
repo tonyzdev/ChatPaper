@@ -141,6 +141,8 @@ interface AppState {
   // 右侧模式：对话 / 翻译；翻译模式下左侧划选即自动翻译
   mode: "chat" | "translate";
   pendingTranslate: string | null;
+  /** 待确认上传的 PDF：当前对话已在进行时先暂存，等用户选「开新 / 加当前」 */
+  pendingPdf: File | null;
 
   openPdf: (file: File) => void;
   closePdf: () => void;
@@ -159,6 +161,7 @@ interface AppState {
   setPdfPinchZoom: (v: boolean) => void;
   setMode: (m: "chat" | "translate") => void;
   setPendingTranslate: (t: string | null) => void;
+  setPendingPdf: (f: File | null) => void;
 
   /** 确保存在当前会话，返回其 id */
   ensureConversation: () => string;
@@ -221,6 +224,7 @@ export const useAppStore = create<AppState>()(
       pdfPinchZoom: false,
       mode: "chat",
       pendingTranslate: null,
+      pendingPdf: null,
 
       openPdf: (file) => {
         pdfLoadRequest += 1;
@@ -301,6 +305,7 @@ export const useAppStore = create<AppState>()(
       setPdfPinchZoom: (v) => set({ pdfPinchZoom: v }),
       setMode: (m) => set({ mode: m }),
       setPendingTranslate: (t) => set({ pendingTranslate: t }),
+      setPendingPdf: (f) => set({ pendingPdf: f }),
 
       ensureConversation: () => {
         const { currentId, conversations, pdfId, fileName } = get();
