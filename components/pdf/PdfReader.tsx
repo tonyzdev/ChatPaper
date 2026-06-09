@@ -370,7 +370,6 @@ function Dropzone({ onPick }: { onPick: (f?: File | null) => void }) {
   const [drag, setDrag] = useState(false);
   return (
     <div className="flex h-full flex-col items-center justify-center bg-muted/40 p-8">
-      {/* oxlint-disable-next-line label-has-associated-control */}
       <label
         className={cn(
           "flex w-full max-w-md cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed bg-background p-12 text-center transition-colors",
