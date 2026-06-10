@@ -26,6 +26,7 @@ import { Switch } from "@/components/ui/switch";
 import { loadAnnotations } from "@/lib/annotationStore";
 import { type PageRect, toPageRects } from "@/lib/annotations";
 import { extractPdfText } from "@/lib/pdfText";
+import { matchSpans } from "@/lib/textMatch";
 import type { Annotation } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { type PdfTextStatus, useAppStore } from "@/store/useAppStore";
@@ -109,8 +110,9 @@ export function PdfReader() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<PDFDocumentProxy | null>(null);
 
-  // 点击 AI 回答里的页码引用 → 滚动到该页并高亮闪烁定位。懒渲染下占位 div
-  // 始终在 DOM（带 data-page-number），滚动进视口会触发该页真正渲染。
+  // 点击 AI 回答里的页码引用 → 滚动到该页；带原文片段时等文本层渲染好后
+  // 在 span 里定位该句高亮（matchSpans），找不到或没有片段则整页闪烁。
+  // 懒渲染下占位 div 始终在 DOM，滚动进视口触发该页真正渲染，故需轮询等待。
   useEffect(() => {
     if (!pdfJump) return;
     const el = scrollRef.current?.querySelector<HTMLElement>(
@@ -118,9 +120,67 @@ export function PdfReader() {
     );
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "start" });
-    el.classList.add("cp-page-flash");
-    const t = setTimeout(() => el.classList.remove("cp-page-flash"), 1600);
-    return () => clearTimeout(t);
+
+    let cancelled = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const flashed: HTMLElement[] = [];
+    const after = (ms: number, fn: () => void) => {
+      const t = setTimeout(() => {
+        if (!cancelled) fn();
+      }, ms);
+      timers.push(t);
+    };
+    const flashPage = () => {
+      el.classList.add("cp-page-flash");
+      after(1600, () => el.classList.remove("cp-page-flash"));
+    };
+
+    const quote = pdfJump.quote;
+    if (!quote) {
+      flashPage();
+    } else {
+      let attempts = 0;
+      const tryMatch = () => {
+        const spans = Array.from(
+          el.querySelectorAll<HTMLElement>(
+            ".react-pdf__Page__textContent > span",
+          ),
+        );
+        if (spans.length > 0) {
+          const hits = matchSpans(
+            spans.map((s) => s.textContent ?? ""),
+            quote,
+          );
+          if (hits.length > 0) {
+            spans[hits[0]].scrollIntoView({
+              behavior: "smooth",
+              block: "center",
+            });
+            for (const i of hits) {
+              spans[i].classList.add("cp-span-flash");
+              flashed.push(spans[i]);
+            }
+            after(2600, () => {
+              for (const s of flashed) s.classList.remove("cp-span-flash");
+            });
+          } else {
+            flashPage(); // 文本层就绪但没匹配上（AI 改写了原文）→ 退回页级
+          }
+          return;
+        }
+        // 文本层还没渲染（懒渲染中）：最多等 12 × 250ms
+        if (++attempts < 12) after(250, tryMatch);
+        else flashPage();
+      };
+      tryMatch();
+    }
+
+    return () => {
+      cancelled = true;
+      for (const t of timers) clearTimeout(t);
+      el.classList.remove("cp-page-flash");
+      for (const s of flashed) s.classList.remove("cp-span-flash");
+    };
   }, [pdfJump]);
 
   const collectPageSizes = useCallback(async (pdf: PDFDocumentProxy) => {

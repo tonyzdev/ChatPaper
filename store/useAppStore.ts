@@ -147,8 +147,9 @@ interface AppState {
   pendingTranslate: string | null;
   /** 待确认上传的 PDF：当前对话已在进行时先暂存，等用户选「开新 / 加当前」 */
   pendingPdf: File | null;
-  /** 跳转信号：点击 AI 回答里的页码引用时设置，阅读器监听并滚动高亮（n 去重） */
-  pdfJump: { page: number; n: number } | null;
+  /** 跳转信号：点击 AI 回答里的页码引用时设置，阅读器监听并滚动高亮（n 去重）；
+   *  quote 为 AI 抄录的原文片段，用于在文本层定位到具体句子 */
+  pdfJump: { page: number; quote?: string; n: number } | null;
 
   openPdf: (file: File) => void;
   closePdf: () => void;
@@ -173,7 +174,7 @@ interface AppState {
   setMode: (m: "chat" | "translate") => void;
   setPendingTranslate: (t: string | null) => void;
   setPendingPdf: (f: File | null) => void;
-  jumpToPage: (page: number) => void;
+  jumpToPage: (page: number, quote?: string) => void;
 
   /** 确保存在当前会话，返回其 id */
   ensureConversation: () => string;
@@ -347,7 +348,8 @@ export const useAppStore = create<AppState>()(
       setMode: (m) => set({ mode: m }),
       setPendingTranslate: (t) => set({ pendingTranslate: t }),
       setPendingPdf: (f) => set({ pendingPdf: f }),
-      jumpToPage: (page) => set({ pdfJump: { page, n: ++jumpSeq } }),
+      jumpToPage: (page, quote) =>
+        set({ pdfJump: { page, quote, n: ++jumpSeq } }),
 
       ensureConversation: () => {
         const { currentId, conversations, pdfId, fileName } = get();

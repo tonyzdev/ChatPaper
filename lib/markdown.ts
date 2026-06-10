@@ -20,14 +20,27 @@ export function normalizeMath(s: string): string {
   );
 }
 
-// 把 AI 标注的页码引用「【P3】」「【p. 3】」转成页内锚点链接 [📄 p.3](#cp-page-3)，
-// Streamdown 会渲染成 <a>，ChatPanel 用事件委托拦截点击并通知阅读器跳转。
-// 锚点用 # 前缀（同页锚点不会被 rehype 的 URL 净化掉）。
+// markdown 链接 URL 里的 ( ) ! ' * 不会被 encodeURIComponent 编码，
+// 但会截断 / 干扰链接解析，这里补编码（decodeURIComponent 可正常还原）
+function encodeForMdUrl(s: string): string {
+  return encodeURIComponent(s).replace(
+    /[()!'*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+// 把 AI 标注的页码引用转成页内锚点链接，Streamdown 渲染成 <a> 后由
+// ChatPanel 的自定义组件接管点击、通知阅读器跳转：
+//   【P3】          → [📄 p.3](#cp-page-3)               页级定位
+//   【P3:原文片段】 → [📄 p.3](#cp-page-3?q=<encoded>)   句级定位（片段用于文本层匹配）
 export function linkifyPageRefs(s: string): string {
   return outsideCode(s, (seg) =>
     seg.replace(
-      /【\s*[Pp]\.?\s*(\d+)\s*】/g,
-      (_, n: string) => `[📄 p.${n}](#cp-page-${n})`,
+      /【\s*[Pp]\.?\s*(\d+)\s*(?:[:：]\s*([^】]{1,120}?)\s*)?】/g,
+      (_, n: string, quote?: string) =>
+        quote
+          ? `[📄 p.${n}](#cp-page-${n}?q=${encodeForMdUrl(quote)})`
+          : `[📄 p.${n}](#cp-page-${n})`,
     ),
   );
 }

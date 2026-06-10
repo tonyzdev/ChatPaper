@@ -435,13 +435,26 @@ export function ChatPanel() {
     () => ({
       a: ({ href, children }: ComponentProps<"a">) => {
         if (href?.startsWith("#cp-page-")) {
-          const page = Number(href.slice("#cp-page-".length));
+          // 形如 #cp-page-3 或 #cp-page-3?q=<encoded 原文片段>
+          const [pageStr, encoded] = href
+            .slice("#cp-page-".length)
+            .split("?q=");
+          const page = Number(pageStr);
+          let quote: string | undefined;
+          if (encoded) {
+            try {
+              quote = decodeURIComponent(encoded);
+            } catch {
+              quote = undefined;
+            }
+          }
           return (
             <button
               className="mx-0.5 rounded bg-primary/10 px-1 text-primary text-xs hover:bg-primary/20"
               onClick={() => {
-                if (page > 0) jumpToPage(page);
+                if (page > 0) jumpToPage(page, quote);
               }}
+              title={quote ? `定位：${quote}` : undefined}
               type="button"
             >
               {children}
