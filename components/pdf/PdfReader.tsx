@@ -2,6 +2,8 @@
 
 import {
   Check,
+  Copy,
+  Crop,
   FileSearch,
   FileText,
   FileUp,
@@ -20,6 +22,14 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -105,7 +115,26 @@ export function PdfReader() {
   const ocrEnabled = useAppStore(
     (s) => s.settings.ocr.enabled && s.settings.ocr.apiKey.trim().length > 0,
   );
+  const regionEngineReady = useAppStore(
+    (s) =>
+      (s.settings.ocr.enabled && s.settings.ocr.apiKey.trim().length > 0) ||
+      (s.settings.vision.enabled && s.settings.vision.apiKey.trim().length > 0),
+  );
   const [popover, setPopover] = useState<Popover | null>(null);
+  // 框选识别：选区转图喂 OCR/视觉模型，产出 LaTeX/Markdown（公式、表格、图说明）
+  const [regionMode, setRegionMode] = useState(false);
+  const [regionDrag, setRegionDrag] = useState<{
+    sx: number;
+    sy: number;
+    cx: number;
+    cy: number;
+  } | null>(null);
+  const [regionResult, setRegionResult] = useState<{
+    status: "loading" | "ok" | "error";
+    page: number;
+    text?: string;
+    error?: string;
+  } | null>(null);
   // 每页 scale=1 的基准尺寸，用于懒渲染占位（页面未渲染时也保持正确高度，滚动条不跳）
   const [pageSizes, setPageSizes] = useState<{ width: number; height: number }[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -376,6 +405,96 @@ export function PdfReader() {
     setPopover(null);
   }, [popover, addCitation, fileName]);
 
+  // Esc 退出框选模式
+  useEffect(() => {
+    if (!regionMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setRegionMode(false);
+        setRegionDrag(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [regionMode]);
+
+  // 框选结束：定位所在页 → 选区转页内百分比 → 裁图 → 送 OCR / 视觉模型
+  const finishRegion = useCallback(
+    async (drag: { sx: number; sy: number; cx: number; cy: number }) => {
+      setRegionMode(false);
+      setRegionDrag(null);
+      const container = scrollRef.current;
+      const pdf = docRef.current;
+      if (!container || !pdf) return;
+      const left = Math.min(drag.sx, drag.cx);
+      const top = Math.min(drag.sy, drag.cy);
+      const right = Math.max(drag.sx, drag.cx);
+      const bottom = Math.max(drag.sy, drag.cy);
+      if (right - left < 8 || bottom - top < 8) return; // 误点
+
+      // 命中相交面积最大的页
+      let best: { page: number; rect: DOMRect; area: number } | null = null;
+      for (const el of Array.from(
+        container.querySelectorAll<HTMLElement>("[data-page-number]"),
+      )) {
+        const r = el.getBoundingClientRect();
+        const w = Math.min(right, r.right) - Math.max(left, r.left);
+        const h = Math.min(bottom, r.bottom) - Math.max(top, r.top);
+        const area = Math.max(0, w) * Math.max(0, h);
+        if (area > 0 && (!best || area > best.area)) {
+          best = { page: Number(el.dataset.pageNumber), rect: r, area };
+        }
+      }
+      if (!best) return;
+
+      const pageRect = {
+        x: (Math.max(left, best.rect.left) - best.rect.left) / best.rect.width,
+        y: (Math.max(top, best.rect.top) - best.rect.top) / best.rect.height,
+        w:
+          (Math.min(right, best.rect.right) - Math.max(left, best.rect.left)) /
+          best.rect.width,
+        h:
+          (Math.min(bottom, best.rect.bottom) - Math.max(top, best.rect.top)) /
+          best.rect.height,
+      };
+
+      const { ocr, vision } = useAppStore.getState().settings;
+      const useOcr = ocr.enabled && ocr.apiKey.trim().length > 0;
+      const useVision = vision.enabled && vision.apiKey.trim().length > 0;
+      if (!useOcr && !useVision) return; // 按钮已做禁用，这里兜底
+
+      setRegionResult({ status: "loading", page: best.page });
+      try {
+        const imageUrl = await renderPageRegionToImage(pdf, best.page, pageRect);
+        const res = await fetch(useOcr ? "/api/ocr" : "/api/transcribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            useOcr ? { imageUrl, ocr } : { imageUrl, vision },
+          ),
+        });
+        const data = (await res.json()) as {
+          ok: boolean;
+          text?: string;
+          error?: string;
+        };
+        if (!data.ok) throw new Error(data.error || "识别失败");
+        setRegionResult({
+          status: "ok",
+          page: best.page,
+          text: (data.text || "").trim(),
+        });
+      } catch (e) {
+        setRegionResult({
+          status: "error",
+          page: best.page,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+    [],
+  );
+
   const confirmHighlight = useCallback(() => {
     if (!popover || popover.rects.length === 0 || !pdfId) return;
     addAnnotation({
@@ -443,6 +562,20 @@ export function PdfReader() {
             total={numPages}
           />
         ) : null}
+        <Button
+          disabled={!regionEngineReady}
+          onClick={() => setRegionMode((v) => !v)}
+          size="sm"
+          title={
+            regionEngineReady
+              ? "框选公式 / 表格 / 图，用 OCR 或视觉模型识别为 LaTeX / Markdown（Esc 退出）"
+              : "需在 设置 中开启 OCR 或图像转写后可用"
+          }
+          variant={regionMode ? "default" : "outline"}
+        >
+          <Crop className="size-3.5" />
+          框选识别
+        </Button>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <label className="flex cursor-pointer select-none items-center gap-1.5" title="开启后用触控板双指捏合/张开缩放 PDF">
             <Switch
@@ -521,9 +654,39 @@ export function PdfReader() {
         </div>
       ) : null}
 
-      {/* 内部滚动区：只有这里滚动，整页外壳不动 */}
+      {/* 内部滚动区：只有这里滚动，整页外壳不动。外层 relative 包裹供框选覆盖层
+          盖住「可视区域」（直接放滚动区内的 absolute 会随内容滚走） */}
+      <div className="relative min-h-0 flex-1">
+        {regionMode ? (
+          <div
+            className="absolute inset-0 z-30 cursor-crosshair"
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture(e.pointerId);
+              setRegionDrag({
+                sx: e.clientX,
+                sy: e.clientY,
+                cx: e.clientX,
+                cy: e.clientY,
+              });
+            }}
+            onPointerMove={(e) => {
+              if (regionDrag)
+                setRegionDrag({ ...regionDrag, cx: e.clientX, cy: e.clientY });
+            }}
+            onPointerUp={() => {
+              if (regionDrag) void finishRegion(regionDrag);
+            }}
+          >
+            <div className="absolute inset-x-0 top-2 z-10 flex justify-center">
+              <span className="rounded-full bg-background/90 px-3 py-1 text-muted-foreground text-xs shadow">
+                拖拽框选要识别的公式 / 表格 / 图（Esc 退出）
+              </span>
+            </div>
+            {regionDrag ? <RegionRect drag={regionDrag} /> : null}
+          </div>
+        ) : null}
       <div
-        className="relative min-h-0 flex-1 overflow-auto overscroll-contain p-4"
+        className="relative h-full overflow-auto overscroll-contain p-4"
         onMouseUp={handleMouseUp}
         ref={scrollRef}
         style={{
@@ -644,7 +807,87 @@ export function PdfReader() {
           </div>
         )}
       </div>
+      </div>
+
+      {/* 框选识别结果 */}
+      <Dialog
+        onOpenChange={(o) => {
+          if (!o) setRegionResult(null);
+        }}
+        open={Boolean(regionResult)}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              框选识别{regionResult ? `（第 ${regionResult.page} 页）` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              {regionResult?.status === "loading"
+                ? "正在识别框选区域…"
+                : regionResult?.status === "error"
+                  ? `识别失败：${regionResult.error}`
+                  : "识别结果（公式为 LaTeX、表格为 Markdown），可复制或作为引用发给 AI"}
+            </DialogDescription>
+          </DialogHeader>
+          {regionResult?.status === "loading" ? (
+            <div className="flex items-center justify-center py-8">
+              <Spinner className="size-5" />
+            </div>
+          ) : regionResult?.status === "ok" ? (
+            <>
+              <textarea
+                className="h-48 w-full resize-none rounded-md border bg-muted/30 p-2 font-mono text-xs outline-none"
+                readOnly
+                value={regionResult.text}
+              />
+              <DialogFooter className="gap-2 sm:gap-2">
+                <Button
+                  onClick={() => {
+                    void navigator.clipboard.writeText(regionResult.text ?? "");
+                  }}
+                  variant="outline"
+                >
+                  <Copy className="size-3.5" />
+                  复制
+                </Button>
+                <Button
+                  onClick={() => {
+                    addCitation({
+                      text: regionResult.text ?? "",
+                      page: regionResult.page,
+                      source: fileName ?? "PDF",
+                    });
+                    setRegionResult(null);
+                  }}
+                >
+                  <Quote className="size-3.5" />
+                  引用到对话
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+/** 框选拖拽中的虚线选框（client 坐标，fixed 定位最直接） */
+function RegionRect({
+  drag,
+}: {
+  drag: { sx: number; sy: number; cx: number; cy: number };
+}) {
+  return (
+    <div
+      className="pointer-events-none fixed z-40 border-2 border-primary border-dashed bg-primary/10"
+      style={{
+        left: Math.min(drag.sx, drag.cx),
+        top: Math.min(drag.sy, drag.cy),
+        width: Math.abs(drag.cx - drag.sx),
+        height: Math.abs(drag.cy - drag.sy),
+      }}
+    />
   );
 }
 
@@ -769,11 +1012,11 @@ function Center({ children }: { children: React.ReactNode }) {
   );
 }
 
-async function renderPageToImage(
+async function renderPageCanvas(
   pdf: PDFDocumentProxy,
   pageNum: number,
-  targetWidth = 1500,
-): Promise<string> {
+  targetWidth: number,
+): Promise<HTMLCanvasElement> {
   const page = await pdf.getPage(pageNum);
   const base = page.getViewport({ scale: 1 });
   const viewport = page.getViewport({ scale: targetWidth / base.width });
@@ -784,7 +1027,37 @@ async function renderPageToImage(
   if (!ctx) throw new Error("canvas 2d context 不可用");
   await page.render({ canvas, canvasContext: ctx, viewport }).promise;
   page.cleanup();
+  return canvas;
+}
+
+async function renderPageToImage(
+  pdf: PDFDocumentProxy,
+  pageNum: number,
+  targetWidth = 1500,
+): Promise<string> {
+  const canvas = await renderPageCanvas(pdf, pageNum, targetWidth);
   return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+/** 框选识别：渲染整页（2000px 宽，公式细节更清晰）后裁出框选区域，PNG 输出 */
+async function renderPageRegionToImage(
+  pdf: PDFDocumentProxy,
+  pageNum: number,
+  rect: { x: number; y: number; w: number; h: number },
+): Promise<string> {
+  const canvas = await renderPageCanvas(pdf, pageNum, 2000);
+  const sx = Math.max(0, Math.floor(rect.x * canvas.width));
+  const sy = Math.max(0, Math.floor(rect.y * canvas.height));
+  const sw = Math.min(canvas.width - sx, Math.ceil(rect.w * canvas.width));
+  const sh = Math.min(canvas.height - sy, Math.ceil(rect.h * canvas.height));
+  if (sw < 4 || sh < 4) throw new Error("框选区域过小");
+  const out = document.createElement("canvas");
+  out.width = sw;
+  out.height = sh;
+  const ctx = out.getContext("2d");
+  if (!ctx) throw new Error("canvas 2d context 不可用");
+  ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  return out.toDataURL("image/png");
 }
 
 function FullTextButton({
@@ -827,6 +1100,32 @@ function FullTextButton({
       </Button>
     );
   }
+  if (status === "idle" || status === "error") {
+    return (
+      <div className="flex items-center gap-1">
+        <Button
+          onClick={onParse}
+          size="sm"
+          title="解析整篇 PDF 文本层，作为对话上下文发送给 AI（快，但公式/表格还原一般）"
+          variant="outline"
+        >
+          <FileText className="size-3.5" />
+          {status === "error" ? "解析失败 · 重试" : "解析全文"}
+        </Button>
+        {ocrEnabled ? (
+          <Button
+            onClick={onOcr}
+            size="sm"
+            title="用 DeepSeek-OCR 逐页识别（慢、按页计费，但公式转 LaTeX、表格结构更准）"
+            variant="outline"
+          >
+            <FileSearch className="size-3.5" />
+            OCR 解析
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
   if (status === "scanned") {
     return ocrEnabled ? (
       <Button
@@ -850,15 +1149,5 @@ function FullTextButton({
       </Button>
     );
   }
-  return (
-    <Button
-      onClick={onParse}
-      size="sm"
-      title="解析整篇 PDF 文本，作为对话上下文发送给 AI"
-      variant="outline"
-    >
-      <FileText className="size-3.5" />
-      {status === "error" ? "解析失败 · 重试" : "解析全文"}
-    </Button>
-  );
+  return null;
 }
