@@ -174,6 +174,16 @@ body {
 /* react-pdf 页面外观干净稳定 */
 .react-pdf__Page {
   background: #fff;
+  transition: filter 150ms;
+}
+
+/* 颜色模式：filter 只作用于 PDF 渲染层（纸张+文字）。夜间=反色，护眼=染绿。
+   故意不加在外层容器上 —— 高亮层、页码闪烁等覆盖物不应跟着偏色 */
+[data-pdf-theme="dark"] .react-pdf__Page {
+  filter: invert(0.92) hue-rotate(180deg);
+}
+[data-pdf-theme="sepia"] .react-pdf__Page {
+  filter: sepia(0.5) saturate(0.85) hue-rotate(35deg) brightness(0.98);
 }
 .react-pdf__Page__canvas {
   display: block;
