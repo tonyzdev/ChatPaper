@@ -166,10 +166,6 @@ export function ChatPanel() {
         setSettingsOpen(true);
         return;
       }
-      // 仅当前模式：每次翻译前清掉上一条，右侧只显示最新译文
-      if (!settings.translation.keepHistory) {
-        setMessages([]);
-      }
       ensureConversation();
       sendMessage(
         {
@@ -191,13 +187,7 @@ export function ChatPanel() {
       );
       setSendTick((n) => n + 1);
     });
-  }, [
-    settings,
-    ensureConversation,
-    sendMessage,
-    setMessages,
-    setPendingTranslate,
-  ]);
+  }, [settings, ensureConversation, sendMessage, setPendingTranslate]);
 
   // 刷新后恢复上次会话的消息与当时的 PDF。
   // persist 存储是异步的（IndexedDB），挂载瞬间 state 可能还是默认值，
@@ -468,6 +458,12 @@ export function ChatPanel() {
     [jumpToPage],
   );
 
+  // 仅当前翻译模式：数据全保留，显示层只渲染最新一条译文对（不删历史）
+  const displayMessages =
+    mode === "translate" && !settings.translation.keepHistory
+      ? messages.slice(-2)
+      : messages;
+
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-background">
       {/* header：半透明毛玻璃，消息可滚到其下 */}
@@ -545,7 +541,7 @@ export function ChatPanel() {
         <Conversation>
           <ConversationContent className="px-5 pt-16">
             <AutoScrollOnSend tick={sendTick} />
-            {messages.length === 0 ? (
+            {displayMessages.length === 0 ? (
               fileName ? (
                 <QuickActions
                   hasFullText={Boolean(pdfFullText)}
@@ -554,7 +550,7 @@ export function ChatPanel() {
                 />
               ) : null
             ) : (
-              messages.map((m) => {
+              displayMessages.map((m) => {
                   const msgCitations = getMessageCitations(m);
                   return (
                     <Message from={m.role} key={m.id}>
