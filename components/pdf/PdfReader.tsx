@@ -10,7 +10,6 @@ import {
   Moon,
   Quote,
   Sun,
-  Trash2,
   X,
   ZoomIn,
   ZoomOut,
@@ -439,18 +438,9 @@ export function PdfReader() {
                 : undefined,
         }}
       >
-        {/* 颜色模式：对整个 PDF（纸张+文字）应用 filter。夜间=反色，护眼=染绿 */}
-        <div
-          className="transition-[filter] duration-150"
-          style={{
-            filter:
-              colorMode === "dark"
-                ? "invert(0.92) hue-rotate(180deg)"
-                : colorMode === "sepia"
-                  ? "sepia(0.5) saturate(0.85) hue-rotate(35deg) brightness(0.98)"
-                  : undefined,
-          }}
-        >
+        {/* 颜色模式 filter 只作用于 .react-pdf__Page（globals.css 按 data-pdf-theme
+            选择器下沉到页面渲染层），高亮层 / 页码闪烁等覆盖物不跟着偏色 */}
+        <div data-pdf-theme={colorMode === "light" ? undefined : colorMode}>
           <Document
             className="flex flex-col items-center gap-4"
             error={<Center>无法加载该 PDF 文件</Center>}
@@ -500,7 +490,6 @@ export function PdfReader() {
                 onClick={confirmHighlight}
                 onMouseDown={(e) => e.preventDefault()}
                 size="sm"
-                variant="secondary"
               >
                 <Highlighter className="size-3.5" />
                 高亮
@@ -514,6 +503,21 @@ export function PdfReader() {
             className="absolute z-30 w-56 -translate-x-1/2 translate-y-2 rounded-lg border bg-background p-2 shadow-xl"
             style={{ top: activeAnno.top, left: activeAnno.left }}
           >
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-muted-foreground text-xs">高亮批注</span>
+              <button
+                aria-label="删除高亮"
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => {
+                  removeAnnotation(activeAnno.id);
+                  setActiveAnno(null);
+                }}
+                title="删除这条高亮"
+                type="button"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
             <textarea
               className="h-16 w-full resize-none rounded border bg-transparent p-1.5 text-xs outline-none focus:ring-1 focus:ring-primary"
               onChange={(e) =>
@@ -522,36 +526,23 @@ export function PdfReader() {
               placeholder="加批注…"
               value={activeAnno.note}
             />
-            <div className="mt-1.5 flex items-center justify-between">
+            <div className="mt-1.5 flex justify-end gap-1">
               <Button
-                aria-label="删除高亮"
-                onClick={() => {
-                  removeAnnotation(activeAnno.id);
-                  setActiveAnno(null);
-                }}
+                onClick={() => setActiveAnno(null)}
                 size="sm"
                 variant="ghost"
               >
-                <Trash2 className="size-3.5 text-destructive" />
+                取消
               </Button>
-              <div className="flex gap-1">
-                <Button
-                  onClick={() => setActiveAnno(null)}
-                  size="sm"
-                  variant="ghost"
-                >
-                  取消
-                </Button>
-                <Button
-                  onClick={() => {
-                    updateAnnotation(activeAnno.id, { note: activeAnno.note });
-                    setActiveAnno(null);
-                  }}
-                  size="sm"
-                >
-                  保存
-                </Button>
-              </div>
+              <Button
+                onClick={() => {
+                  updateAnnotation(activeAnno.id, { note: activeAnno.note });
+                  setActiveAnno(null);
+                }}
+                size="sm"
+              >
+                保存
+              </Button>
             </div>
           </div>
         )}
