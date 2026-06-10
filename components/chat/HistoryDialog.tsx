@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/useAppStore";
+import { convPdfs, useAppStore } from "@/store/useAppStore";
 
 export function HistoryDialog({
   open,
@@ -39,8 +39,13 @@ export function HistoryDialog({
             </p>
           ) : (
             conversations.map((c) => {
+              const pdfs = convPdfs(c);
               const pdfTitle =
-                c.pdfName?.trim() || (c.pdfId ? "已关联 PDF" : "未关联 PDF");
+                pdfs.length === 0
+                  ? "未关联 PDF"
+                  : pdfs.length === 1
+                    ? pdfs[0].name
+                    : `${pdfs[0].name} 等 ${pdfs.length} 篇`;
 
               return (
                 <div

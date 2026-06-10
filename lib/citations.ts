@@ -58,3 +58,28 @@ export function buildDocumentBlock(
 
   return `以下是用户正在阅读的 ${title} 的全文，请基于它理解并回答用户的问题：\n\n${body}`;
 }
+
+/**
+ * 多篇 PDF 的文档上下文：总预算均分到每篇，各篇以《文件名》分节，
+ * 便于模型跨文献对比并在回答里说明来源出自哪一篇。
+ */
+export function buildDocumentsBlock(
+  docs: { name: string; text: string }[],
+  charBudget = 60_000,
+): string | null {
+  const valid = docs.filter((d) => d.text.trim());
+  if (valid.length === 0) return null;
+  if (valid.length === 1) {
+    return buildDocumentBlock(valid[0].text, valid[0].name, charBudget);
+  }
+
+  const per = Math.floor(charBudget / valid.length);
+  const sections = valid.map((d) => {
+    const text = d.text.trim();
+    const body =
+      text.length > per ? `${text.slice(0, per)}\n\n…（本篇过长已截断）` : text;
+    return `《${d.name}》全文：\n\n${body}`;
+  });
+
+  return `以下是用户正在同时阅读的 ${valid.length} 篇 PDF 的全文，请基于它们理解并回答用户的问题（引用时注意说明来自哪一篇）：\n\n${sections.join("\n\n---\n\n")}`;
+}

@@ -67,6 +67,7 @@ export function PdfReader() {
   const setPendingTranslate = useAppStore((s) => s.setPendingTranslate);
   const pdfJump = useAppStore((s) => s.pdfJump);
   const pdfId = useAppStore((s) => s.pdfId);
+  const openPdfsCount = useAppStore((s) => s.openPdfs.length);
   const annotations = useAppStore((s) => s.annotations);
   const setAnnotations = useAppStore((s) => s.setAnnotations);
   const addAnnotation = useAppStore((s) => s.addAnnotation);
@@ -228,12 +229,16 @@ export function PdfReader() {
   const runParse = useCallback(
     async (pdf: PDFDocumentProxy) => {
       if (useAppStore.getState().pdfTextStatus === "parsing") return;
+      // 多 PDF：解析中用户可能切到另一篇，切走后丢弃结果，避免全文串到别篇名下
+      const startId = useAppStore.getState().pdfId;
+      const stillActive = () => useAppStore.getState().pdfId === startId;
       setPdfTextMode("text");
       setPdfTextStatus("parsing", 0);
       try {
-        const text = await extractPdfText(pdf, (done) =>
-          setPdfTextStatus("parsing", done),
-        );
+        const text = await extractPdfText(pdf, (done) => {
+          if (stillActive()) setPdfTextStatus("parsing", done);
+        });
+        if (!stillActive()) return;
         // 文本层近乎为空 → 多半是扫描件：提示用 OCR（不自动跑，避免意外消耗）
         if (text.replace(/\s/g, "").length < pdf.numPages * 10) {
           setPdfTextStatus("scanned");
@@ -241,7 +246,7 @@ export function PdfReader() {
           setPdfFullText(text);
         }
       } catch {
-        setPdfTextStatus("error");
+        if (stillActive()) setPdfTextStatus("error");
       }
     },
     [setPdfTextStatus, setPdfFullText, setPdfTextMode],
@@ -254,6 +259,8 @@ export function PdfReader() {
       const ocr = useAppStore.getState().settings.ocr;
       if (!ocr.enabled || !ocr.apiKey.trim()) return;
       if (useAppStore.getState().pdfTextStatus === "parsing") return;
+      const startId = useAppStore.getState().pdfId;
+      const stillActive = () => useAppStore.getState().pdfId === startId;
       setPdfTextMode("ocr");
       setPdfTextStatus("parsing", 0);
       try {
@@ -279,12 +286,13 @@ export function PdfReader() {
             if (!data.ok) throw new Error(data.error || "OCR 失败");
             pages[pageNum - 1] = (data.text || "").trim();
             done++;
-            setPdfTextStatus("parsing", done);
+            if (stillActive()) setPdfTextStatus("parsing", done);
           }
         };
         await Promise.all(
           Array.from({ length: Math.min(3, total) }, () => worker()),
         );
+        if (!stillActive()) return;
         setPdfFullText(
           pages
             .map((p, i) => `[第 ${i + 1} 页]\n${p}`)
@@ -293,7 +301,7 @@ export function PdfReader() {
             .trim(),
         );
       } catch {
-        setPdfTextStatus("error");
+        if (stillActive()) setPdfTextStatus("error");
       }
     },
     [setPdfTextStatus, setPdfFullText, setPdfTextMode],
@@ -397,6 +405,15 @@ export function PdfReader() {
   );
 
   if (!fileUrl) {
+    // 列表里还有 PDF（切换加载中 / 文件丢失）时不展示上传引导，避免闪烁误导
+    if (openPdfsCount > 0) {
+      return (
+        <div className="flex h-full items-center justify-center bg-muted/40 text-muted-foreground text-sm">
+          <Spinner className="mr-2 size-4" />
+          正在加载文献…
+        </div>
+      );
+    }
     return <Dropzone onPick={pickFile} />;
   }
 

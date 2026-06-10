@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildCitationBlock, buildDocumentBlock } from "@/lib/citations";
+import {
+  buildCitationBlock,
+  buildDocumentBlock,
+  buildDocumentsBlock,
+} from "@/lib/citations";
 import type { Citation } from "@/lib/types";
 
 const cite = (text: string, page?: number): Citation => ({
@@ -57,5 +61,44 @@ describe("buildDocumentBlock", () => {
     expect(out).toContain("…（全文过长已截断");
     expect(out).toContain("z".repeat(50));
     expect(out).not.toContain("z".repeat(51));
+  });
+});
+
+describe("buildDocumentsBlock", () => {
+  it("空列表 / 全空文本返回 null", () => {
+    expect(buildDocumentsBlock([])).toBeNull();
+    expect(buildDocumentsBlock([{ name: "a.pdf", text: "  " }])).toBeNull();
+  });
+
+  it("单篇退化为单文档块", () => {
+    const out = buildDocumentsBlock([{ name: "a.pdf", text: "正文" }]);
+    expect(out).toContain("《a.pdf》");
+    expect(out).toContain("正文");
+    expect(out).not.toContain("同时阅读");
+  });
+
+  it("多篇分节并提示说明来源", () => {
+    const out = buildDocumentsBlock([
+      { name: "a.pdf", text: "甲文内容" },
+      { name: "b.pdf", text: "乙文内容" },
+    ]);
+    expect(out).toContain("2 篇 PDF");
+    expect(out).toContain("《a.pdf》全文：");
+    expect(out).toContain("《b.pdf》全文：");
+    expect(out).toContain("哪一篇");
+  });
+
+  it("总预算均分到每篇并截断", () => {
+    const out = buildDocumentsBlock(
+      [
+        { name: "a.pdf", text: "x".repeat(100) },
+        { name: "b.pdf", text: "y".repeat(100) },
+      ],
+      100,
+    );
+    expect(out).toContain("x".repeat(50));
+    expect(out).not.toContain("x".repeat(51));
+    expect(out).toContain("y".repeat(50));
+    expect(out).toContain("…（本篇过长已截断）");
   });
 });

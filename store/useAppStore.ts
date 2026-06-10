@@ -65,14 +65,28 @@ export interface Settings {
 /** 整篇 PDF 全文解析状态 */
 export type PdfTextStatus = "idle" | "parsing" | "ready" | "error" | "scanned";
 
+export interface OpenPdf {
+  id: string;
+  name: string;
+}
+
 export interface Conversation {
   id: string;
   title: string;
   messages: UIMessage[];
   updatedAt: number;
-  /** 该会话当时打开的 PDF（文件存 IndexedDB，按 id 取） */
+  /** 该会话打开的全部 PDF（文件存 IndexedDB，按 id 取） */
+  pdfs?: OpenPdf[];
+  /** @deprecated 旧单 PDF 字段，读取兼容；新数据写 pdfs */
   pdfId?: string;
   pdfName?: string;
+}
+
+/** 旧会话数据兼容：pdfs 缺失时把 pdfId/pdfName 视为单元素列表 */
+export function convPdfs(conv?: Conversation): OpenPdf[] {
+  if (!conv) return [];
+  if (conv.pdfs?.length) return conv.pdfs;
+  return conv.pdfId ? [{ id: conv.pdfId, name: conv.pdfName ?? "PDF" }] : [];
 }
 
 function deriveTitle(messages: UIMessage[]): string {
@@ -87,6 +101,26 @@ function deriveTitle(messages: UIMessage[]): string {
 
 let pdfLoadRequest = 0;
 let jumpSeq = 0;
+
+/** 把 openPdfs 同步进当前会话（无当前会话则原样返回） */
+function syncConvPdfs(
+  st: { currentId: string | null; conversations: Conversation[] },
+  openPdfs: OpenPdf[],
+): Conversation[] {
+  if (!st.currentId) return st.conversations;
+  return st.conversations.map((c) =>
+    c.id === st.currentId
+      ? {
+          ...c,
+          updatedAt: Date.now(),
+          pdfs: openPdfs,
+          // 旧字段保持指向第一篇，兼容可能读它的旧逻辑
+          pdfId: openPdfs[0]?.id,
+          pdfName: openPdfs[0]?.name,
+        }
+      : c,
+  );
+}
 
 /**
  * persist 的异步 storage：IndexedDB 为主。首次读不到时尝试从旧版
@@ -123,6 +157,10 @@ interface AppState {
   fileUrl: string | null;
   fileName: string | null;
   pdfId: string | null;
+  /** 当前会话打开的全部 PDF；pdfId 是其中正在阅读的那个 */
+  openPdfs: OpenPdf[];
+  /** 各 PDF 已解析全文的内存缓存（切换阅读不丢，刷新后按需重解析） */
+  pdfFullTexts: Record<string, string>;
   numPages: number;
   citations: Citation[];
   /** 当前 PDF 的高亮批注（内存；按 pdfId 单独存 IndexedDB，不进 persist） */
@@ -142,6 +180,8 @@ interface AppState {
   // PDF 偏好（持久化）
   pdfColorMode: "light" | "sepia" | "dark";
   pdfPinchZoom: boolean;
+  /** 多 PDF 侧边栏展开/折叠（持久化） */
+  pdfSidebarOpen: boolean;
   // 右侧模式：对话 / 翻译；翻译模式下左侧划选即自动翻译
   mode: "chat" | "translate";
   pendingTranslate: string | null;
@@ -151,8 +191,17 @@ interface AppState {
    *  quote 为 AI 抄录的原文片段，用于在文本层定位到具体句子 */
   pdfJump: { page: number; quote?: string; n: number } | null;
 
+  /** 上传 PDF：加入当前会话列表并切换为正在阅读 */
   openPdf: (file: File) => void;
+  /** 切换正在阅读的 PDF（从 IndexedDB 取文件重建 objectURL） */
+  activatePdf: (id: string) => Promise<void>;
+  /** 从当前会话移除一个 PDF（不删 IndexedDB 文件，历史会话可能还引用） */
+  removePdf: (id: string) => void;
+  /** 移除当前正在阅读的 PDF（工具栏 ×） */
   closePdf: () => void;
+  /** 清空打开的全部 PDF（「开新对话」带新文献时用） */
+  resetPdfs: () => void;
+  setPdfSidebarOpen: (v: boolean) => void;
   setNumPages: (n: number) => void;
   addCitation: (c: Omit<Citation, "id">) => void;
   removeCitation: (id: string) => void;
@@ -194,6 +243,8 @@ export const useAppStore = create<AppState>()(
       fileUrl: null,
       fileName: null,
       pdfId: null,
+      openPdfs: [],
+      pdfFullTexts: {},
       numPages: 0,
       citations: [],
       annotations: [],
@@ -236,6 +287,7 @@ export const useAppStore = create<AppState>()(
       currentId: null,
       pdfColorMode: "light",
       pdfPinchZoom: false,
+      pdfSidebarOpen: true,
       mode: "chat",
       pendingTranslate: null,
       pendingPdf: null,
@@ -247,51 +299,97 @@ export const useAppStore = create<AppState>()(
         if (prev) URL.revokeObjectURL(prev);
         const id = crypto.randomUUID();
         const fileName = file.name;
-        void savePdf(id, file); // 后台存入 IndexedDB，供历史会话恢复
+        void savePdf(id, file); // 后台存入 IndexedDB，供切换 / 历史会话恢复
         set((st) => {
-          const next = {
+          const openPdfs = [...st.openPdfs, { id, name: fileName }];
+          return {
             fileUrl: URL.createObjectURL(file),
             fileName,
             pdfId: id,
+            openPdfs,
             numPages: 0,
-            citations: [],
             pdfFullText: null,
             pdfTextStatus: "idle" as const,
             pdfTextProgress: 0,
+            conversations: syncConvPdfs(st, openPdfs),
           };
-          if (!st.currentId) return next;
-          const conversations = st.conversations.map((c) =>
-            c.id === st.currentId
-              ? { ...c, updatedAt: Date.now(), pdfId: id, pdfName: fileName }
-              : c,
-          );
-          return { ...next, conversations };
         });
       },
+      activatePdf: async (id) => {
+        const st = get();
+        if (id === st.pdfId || !st.openPdfs.some((p) => p.id === id)) return;
+        const request = ++pdfLoadRequest;
+        let file: File | undefined;
+        try {
+          file = await loadPdf(id);
+        } catch {
+          file = undefined;
+        }
+        if (request !== pdfLoadRequest) return; // 期间又切换了
+        if (!file) return; // 文件丢失：保持现状（极端情况，列表项还在可重试）
+        const prev = get().fileUrl;
+        if (prev) URL.revokeObjectURL(prev);
+        set((s) => {
+          const cached = s.pdfFullTexts[id];
+          return {
+            fileUrl: URL.createObjectURL(file),
+            fileName: s.openPdfs.find((p) => p.id === id)?.name ?? file.name,
+            pdfId: id,
+            numPages: 0,
+            pdfFullText: cached ?? null,
+            pdfTextStatus: cached ? ("ready" as const) : ("idle" as const),
+            pdfTextProgress: 0,
+          };
+        });
+      },
+      removePdf: (id) => {
+        const st = get();
+        if (!st.openPdfs.some((p) => p.id === id)) return;
+        const rest = st.openPdfs.filter((p) => p.id !== id);
+        if (id !== st.pdfId) {
+          set((s) => ({
+            openPdfs: rest,
+            conversations: syncConvPdfs(s, rest),
+          }));
+          return;
+        }
+        // 移除的是正在阅读的：切到剩下的第一个，没有则清空阅读器
+        pdfLoadRequest += 1;
+        const prev = st.fileUrl;
+        if (prev) URL.revokeObjectURL(prev);
+        set((s) => ({
+          openPdfs: rest,
+          fileUrl: null,
+          fileName: null,
+          pdfId: null,
+          numPages: 0,
+          pdfFullText: null,
+          pdfTextStatus: "idle" as const,
+          pdfTextProgress: 0,
+          conversations: syncConvPdfs(s, rest),
+        }));
+        if (rest.length > 0) void get().activatePdf(rest[0].id);
+      },
       closePdf: () => {
+        const { pdfId } = get();
+        if (pdfId) get().removePdf(pdfId);
+      },
+      resetPdfs: () => {
         pdfLoadRequest += 1;
         const prev = get().fileUrl;
         if (prev) URL.revokeObjectURL(prev);
-        set((st) => {
-          const next = {
-            fileUrl: null,
-            fileName: null,
-            pdfId: null,
-            numPages: 0,
-            citations: [],
-            pdfFullText: null,
-            pdfTextStatus: "idle" as const,
-            pdfTextProgress: 0,
-          };
-          if (!st.currentId) return next;
-          const conversations = st.conversations.map((c) =>
-            c.id === st.currentId
-              ? { ...c, updatedAt: Date.now(), pdfId: undefined, pdfName: undefined }
-              : c,
-          );
-          return { ...next, conversations };
+        set({
+          fileUrl: null,
+          fileName: null,
+          pdfId: null,
+          openPdfs: [],
+          numPages: 0,
+          pdfFullText: null,
+          pdfTextStatus: "idle",
+          pdfTextProgress: 0,
         });
       },
+      setPdfSidebarOpen: (v) => set({ pdfSidebarOpen: v }),
       setNumPages: (n) => set({ numPages: n }),
       addCitation: (c) =>
         set((s) => ({
@@ -328,10 +426,19 @@ export const useAppStore = create<AppState>()(
           return { annotations };
         }),
       setPdfFullText: (text) =>
-        set({
-          pdfFullText: text,
-          pdfTextStatus: text ? "ready" : "idle",
-          pdfTextProgress: 0,
+        set((s) => {
+          // 同步写入缓存：切换 PDF 再切回来不用重新解析
+          const pdfFullTexts = { ...s.pdfFullTexts };
+          if (s.pdfId) {
+            if (text) pdfFullTexts[s.pdfId] = text;
+            else delete pdfFullTexts[s.pdfId];
+          }
+          return {
+            pdfFullText: text,
+            pdfFullTexts,
+            pdfTextStatus: text ? "ready" : "idle",
+            pdfTextProgress: 0,
+          };
         }),
       setPdfTextStatus: (status, progress) =>
         set((s) => ({
@@ -352,7 +459,7 @@ export const useAppStore = create<AppState>()(
         set({ pdfJump: { page, quote, n: ++jumpSeq } }),
 
       ensureConversation: () => {
-        const { currentId, conversations, pdfId, fileName } = get();
+        const { currentId, conversations, openPdfs } = get();
         if (currentId && conversations.some((c) => c.id === currentId)) {
           return currentId;
         }
@@ -365,8 +472,9 @@ export const useAppStore = create<AppState>()(
               title: "新对话",
               messages: [],
               updatedAt: Date.now(),
-              pdfId: pdfId ?? undefined,
-              pdfName: fileName ?? undefined,
+              pdfs: openPdfs,
+              pdfId: openPdfs[0]?.id,
+              pdfName: openPdfs[0]?.name,
             },
             ...st.conversations,
           ],
@@ -378,36 +486,31 @@ export const useAppStore = create<AppState>()(
           const id = st.currentId;
           if (!id || messages.length === 0) return {};
           const title = deriveTitle(messages) || "新对话";
-          const pdfId = st.pdfId ?? undefined;
-          const pdfName = st.fileName ?? undefined;
+          const pdfs = st.openPdfs;
+          const base = {
+            title,
+            messages,
+            updatedAt: Date.now(),
+            pdfs,
+            pdfId: pdfs[0]?.id,
+            pdfName: pdfs[0]?.name,
+          };
           const exists = st.conversations.some((c) => c.id === id);
           const conversations = exists
-            ? st.conversations.map((c) =>
-                c.id === id
-                  ? {
-                      ...c,
-                      messages,
-                      title,
-                      updatedAt: Date.now(),
-                      pdfId,
-                      pdfName,
-                    }
-                  : c,
-              )
-            : [
-                { id, title, messages, updatedAt: Date.now(), pdfId, pdfName },
-                ...st.conversations,
-              ];
+            ? st.conversations.map((c) => (c.id === id ? { ...c, ...base } : c))
+            : [{ id, ...base }, ...st.conversations];
           return { conversations };
         }),
       newConversation: () => set({ currentId: null }),
       switchConversation: (id) => set({ currentId: id }),
       loadConversationPdf: async (conv) => {
         const request = ++pdfLoadRequest;
-        if (conv?.pdfId) {
+        const pdfs = convPdfs(conv);
+        const first = pdfs[0];
+        if (first) {
           let file: File | undefined;
           try {
-            file = await loadPdf(conv.pdfId);
+            file = await loadPdf(first.id);
           } catch {
             file = undefined;
           }
@@ -415,26 +518,24 @@ export const useAppStore = create<AppState>()(
           if (file) {
             const prev = get().fileUrl;
             if (prev) URL.revokeObjectURL(prev);
-            const fileName = conv.pdfName ?? file.name;
-            set((st) => ({
-              fileUrl: URL.createObjectURL(file),
-              fileName,
-              pdfId: conv.pdfId,
-              numPages: 0,
-              citations: [],
-              pdfFullText: null,
-              pdfTextStatus: "idle",
-              pdfTextProgress: 0,
-              conversations: conv.pdfName
-                ? st.conversations
-                : st.conversations.map((c) =>
-                    c.id === conv.id ? { ...c, pdfName: fileName } : c,
-                  ),
-            }));
+            set((s) => {
+              const cached = s.pdfFullTexts[first.id];
+              return {
+                fileUrl: URL.createObjectURL(file),
+                fileName: first.name,
+                pdfId: first.id,
+                openPdfs: pdfs,
+                numPages: 0,
+                citations: [],
+                pdfFullText: cached ?? null,
+                pdfTextStatus: cached ? "ready" : "idle",
+                pdfTextProgress: 0,
+              };
+            });
             return;
           }
         }
-        // 该会话没有关联 PDF（或文件已丢失）：清空阅读器
+        // 该会话没有关联 PDF（或第一篇文件已丢失）：清空阅读器
         if (request !== pdfLoadRequest) return;
         const prev = get().fileUrl;
         if (prev) URL.revokeObjectURL(prev);
@@ -442,6 +543,8 @@ export const useAppStore = create<AppState>()(
           fileUrl: null,
           fileName: null,
           pdfId: null,
+          // 文件丢失时仍保留列表（pdfs 非空时可手动点其他篇重试）
+          openPdfs: pdfs,
           numPages: 0,
           citations: [],
           pdfFullText: null,
@@ -453,11 +556,12 @@ export const useAppStore = create<AppState>()(
         set((st) => {
           const nextConversations = st.conversations.filter((c) => c.id !== id);
           const conv = st.conversations.find((c) => c.id === id);
-          if (
-            conv?.pdfId &&
-            !nextConversations.some((c) => c.pdfId === conv.pdfId)
-          ) {
-            void deletePdf(conv.pdfId);
+          // 引用计数清理：该会话引用的 PDF 不再被其他会话引用时，删 IndexedDB 文件
+          const stillUsed = new Set(
+            nextConversations.flatMap((c) => convPdfs(c).map((p) => p.id)),
+          );
+          for (const p of convPdfs(conv)) {
+            if (!stillUsed.has(p.id)) void deletePdf(p.id);
           }
           return {
             conversations: nextConversations,
@@ -474,6 +578,7 @@ export const useAppStore = create<AppState>()(
         currentId: s.currentId,
         pdfColorMode: s.pdfColorMode,
         pdfPinchZoom: s.pdfPinchZoom,
+        pdfSidebarOpen: s.pdfSidebarOpen,
         mode: s.mode,
       }),
       // 旧数据可能没有 settings.vision，深合并补默认，避免读取报错
