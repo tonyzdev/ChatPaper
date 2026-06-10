@@ -7,7 +7,7 @@ import {
 } from "ai";
 import {
   buildCitationBlock,
-  buildDocumentBlock,
+  buildDocumentsBlock,
   SYSTEM_PROMPT,
 } from "@/lib/citations";
 import { resolveModel } from "@/lib/models";
@@ -29,7 +29,9 @@ interface ChatBody {
   // DeepSeek 不支持图像：前端用视觉模型转写好后随消息发来（按最后一条 user 的图顺序）
   imageTranscriptions?: (string | null)[];
   deepseekThinking?: boolean;
-  // 全文解析：前端把整篇 PDF 文本随消息发来，注入 system 作为文档上下文
+  // 全文解析：前端把已解析的各篇 PDF 全文随消息发来，注入 system 作为文档上下文
+  documents?: { name: string; text: string }[];
+  /** @deprecated 旧单文档字段，兼容保留；新前端发 documents */
   fullText?: string;
   pdfName?: string;
 }
@@ -82,6 +84,7 @@ export async function POST(req: Request) {
     accessCode,
     imageTranscriptions,
     deepseekThinking,
+    documents,
     fullText,
     pdfName,
   }: ChatBody = await req.json();
@@ -165,7 +168,10 @@ export async function POST(req: Request) {
   // 全文解析开启时，把整篇 PDF 作为独立 system 消息注入，并打 Anthropic
   // 缓存断点：长全文每轮重复计费是成本大头，命中缓存后该段输入价约 1/10，
   // 首 token 延迟也明显下降（OpenAI/DeepSeek 自动缓存，忽略该标记）
-  const docBlock = buildDocumentBlock(fullText, pdfName);
+  // 新前端发 documents（多篇）；旧 fullText/pdfName 兼容为单元素
+  const docs =
+    documents ?? (fullText ? [{ name: pdfName ?? "PDF", text: fullText }] : []);
+  const docBlock = buildDocumentsBlock(docs);
   const systemMessages: ModelMessage[] = docBlock
     ? [
         { role: "system", content: SYSTEM_PROMPT },

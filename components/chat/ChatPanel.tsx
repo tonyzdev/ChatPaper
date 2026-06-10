@@ -107,6 +107,9 @@ export function ChatPanel() {
   const setMode = useAppStore((s) => s.setMode);
   const setPendingTranslate = useAppStore((s) => s.setPendingTranslate);
   const pdfFullText = useAppStore((s) => s.pdfFullText);
+  const openPdfs = useAppStore((s) => s.openPdfs);
+  const pdfFullTexts = useAppStore((s) => s.pdfFullTexts);
+  const resetPdfs = useAppStore((s) => s.resetPdfs);
   const fileName = useAppStore((s) => s.fileName);
   const openPdf = useAppStore((s) => s.openPdf);
   const pendingPdf = useAppStore((s) => s.pendingPdf);
@@ -354,8 +357,7 @@ export function ChatPanel() {
           model: settings.model,
           imageTranscriptions,
           deepseekThinking: settings.deepseekThinking,
-          fullText: pdfFullText ?? undefined,
-          pdfName: fileName ?? undefined,
+          documents: documents.length > 0 ? documents : undefined,
         },
       },
     );
@@ -382,8 +384,7 @@ export function ChatPanel() {
           baseURL: settings.baseURL,
           model: settings.model,
           deepseekThinking: settings.deepseekThinking,
-          fullText: pdfFullText ?? undefined,
-          pdfName: fileName ?? undefined,
+          documents: documents.length > 0 ? documents : undefined,
         },
       },
     );
@@ -470,6 +471,11 @@ export function ChatPanel() {
     }),
     [jumpToPage],
   );
+
+  // 已解析全文的各篇 PDF，随消息注入 system 作为（多）文档上下文
+  const documents = openPdfs
+    .map((p) => ({ name: p.name, text: pdfFullTexts[p.id] ?? "" }))
+    .filter((d) => d.text);
 
   // 仅当前翻译模式：数据全保留，显示层只渲染最新一条译文对（不删历史）
   const displayMessages =
@@ -701,7 +707,7 @@ export function ChatPanel() {
               onClick={() => {
                 const f = pendingPdf;
                 setPendingPdf(null);
-                if (f) openPdf(f); // 关联到当前会话（覆盖原 PDF）
+                if (f) openPdf(f); // 加入当前会话的 PDF 列表（多 PDF 并存）
               }}
               variant="outline"
             >
@@ -716,6 +722,7 @@ export function ChatPanel() {
                 setMessages([]);
                 clearAttachments();
                 clearCitations();
+                resetPdfs(); // 新对话只带新上传的这篇
                 if (f) openPdf(f); // currentId 已清空，下次发消息再新建会话
               }}
             >
