@@ -20,6 +20,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { loadAnnotations } from "@/lib/annotationStore";
@@ -423,6 +424,25 @@ export function PdfReader() {
           </div>
         </div>
       </div>
+
+      {/* 全局解析进度：解析/OCR 进行中时在工具栏下方显示横幅 + 进度条 */}
+      {pdfTextStatus === "parsing" ? (
+        <div className="flex shrink-0 items-center gap-3 border-b bg-primary/5 px-4 py-2">
+          <Spinner className="size-4 shrink-0 text-primary" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-xs">
+              {pdfTextMode === "ocr" ? "正在 OCR 识别全文" : "正在解析全文"}
+              {numPages > 0 ? `（${pdfTextProgress}/${numPages} 页）` : "…"}
+            </span>
+            {numPages > 0 ? (
+              <Progress
+                className="gap-0"
+                value={Math.round((pdfTextProgress / numPages) * 100)}
+              />
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {/* 内部滚动区：只有这里滚动，整页外壳不动 */}
       <div
