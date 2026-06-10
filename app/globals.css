@@ -203,3 +203,18 @@ body {
 .cp-page-flash {
   animation: cp-page-flash 1.6s ease-in-out;
 }
+
+/* 句级定位：命中的文本层 span 黄底渐隐（文本层在颜色 filter 之外，不偏色） */
+@keyframes cp-span-flash {
+  0%,
+  55% {
+    background: rgba(234, 179, 8, 0.55);
+  }
+  100% {
+    background: transparent;
+  }
+}
+.react-pdf__Page__textContent > span.cp-span-flash {
+  animation: cp-span-flash 2.6s ease-out;
+  border-radius: 2px;
+}

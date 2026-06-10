@@ -55,6 +55,24 @@ describe("linkifyPageRefs", () => {
     expect(linkifyPageRefs("`【P3】` 是标记")).toBe("`【P3】` 是标记");
   });
 
+  it("带原文片段：【P3:quote】转成 ?q= 链接", () => {
+    expect(linkifyPageRefs("如下【P3:loss converges】")).toBe(
+      "如下[📄 p.3](#cp-page-3?q=loss%20converges)",
+    );
+  });
+
+  it("片段里的括号被补编码，不截断 markdown 链接", () => {
+    const out = linkifyPageRefs("【P2:f(x) = y】");
+    expect(out).toBe("[📄 p.2](#cp-page-2?q=f%28x%29%20%3D%20y)");
+    expect(decodeURIComponent(out.match(/q=(.*)\)$/)![1])).toBe("f(x) = y");
+  });
+
+  it("中文冒号也支持", () => {
+    expect(linkifyPageRefs("【P5：注意力机制】")).toBe(
+      "[📄 p.5](#cp-page-5?q=%E6%B3%A8%E6%84%8F%E5%8A%9B%E6%9C%BA%E5%88%B6)",
+    );
+  });
+
   it("无页码引用时原样返回", () => {
     expect(linkifyPageRefs("普通文本【备注】")).toBe("普通文本【备注】");
   });
