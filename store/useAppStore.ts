@@ -118,16 +118,19 @@ interface ProjectStateSlice {
   currentProjectId: string | null;
 }
 
+const EMPTY_CONVERSATIONS: Conversation[] = [];
+const EMPTY_PROJECT_PDFS: OpenPdf[] = [];
+
 export function currentProject(st: ProjectStateSlice): Project | undefined {
   return st.projects.find((p) => p.id === st.currentProjectId);
 }
 
 export function currentProjectConversations(st: ProjectStateSlice): Conversation[] {
-  return currentProject(st)?.conversations ?? [];
+  return currentProject(st)?.conversations ?? EMPTY_CONVERSATIONS;
 }
 
 export function currentProjectPdfs(st: ProjectStateSlice): OpenPdf[] {
-  return currentProject(st)?.pdfs ?? [];
+  return currentProject(st)?.pdfs ?? EMPTY_PROJECT_PDFS;
 }
 
 export function currentConversation(

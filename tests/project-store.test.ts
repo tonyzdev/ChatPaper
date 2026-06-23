@@ -85,6 +85,12 @@ describe("project selectors", () => {
     expect(currentProjectConversations(state)).toHaveLength(1);
     expect(currentProjectPdfs(state)).toEqual([{ id: "pdf-1", name: "paper-a.pdf" }]);
   });
+
+  it("无当前项目时返回稳定的空数组引用", () => {
+    const state = { projects: [], currentProjectId: null };
+    expect(currentProjectConversations(state)).toBe(currentProjectConversations(state));
+    expect(currentProjectPdfs(state)).toBe(currentProjectPdfs(state));
+  });
 });
 
 describe("project actions", () => {
