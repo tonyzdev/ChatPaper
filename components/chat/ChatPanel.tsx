@@ -6,7 +6,9 @@ import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
 import {
   Download,
+  FolderOpen,
   History,
+  Minus,
   Quote,
   Settings,
   Sparkles,
@@ -35,6 +37,7 @@ import {
   safeFileName,
 } from "@/lib/exportMarkdown";
 import { HistoryDialog } from "@/components/chat/HistoryDialog";
+import { ProjectDialog } from "@/components/chat/ProjectDialog";
 import { SettingsDialog } from "@/components/chat/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import { PromptBox } from "@/components/ui/chatgpt-prompt-input";
@@ -50,7 +53,14 @@ import { Switch } from "@/components/ui/switch";
 import { linkifyPageRefs, normalizeMath } from "@/lib/markdown";
 import type { Citation } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/useAppStore";
+import {
+  currentConversation,
+  currentProject,
+  currentProjectConversations,
+  currentProjectPdfs,
+  pdfSummary,
+  useAppStore,
+} from "@/store/useAppStore";
 
 function getMessageCitations(m: UIMessage): Citation[] | undefined {
   return (m.metadata as { citations?: Citation[] } | undefined)?.citations;
@@ -86,7 +96,7 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-export function ChatPanel() {
+export function ChatPanel({ onCollapse }: { onCollapse?: () => void } = {}) {
   const { messages, sendMessage, status, stop, setMessages } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
@@ -96,20 +106,23 @@ export function ChatPanel() {
   const clearCitations = useAppStore((s) => s.clearCitations);
   const settings = useAppStore((s) => s.settings);
   const setSettings = useAppStore((s) => s.setSettings);
-  const conversations = useAppStore((s) => s.conversations);
+  const project = useAppStore((s) => currentProject(s));
+  const conversations = useAppStore((s) => currentProjectConversations(s));
   const ensureConversation = useAppStore((s) => s.ensureConversation);
   const upsertCurrent = useAppStore((s) => s.upsertCurrent);
+  const createProject = useAppStore((s) => s.createProject);
   const newConversation = useAppStore((s) => s.newConversation);
+  const switchProject = useAppStore((s) => s.switchProject);
+  const deleteProject = useAppStore((s) => s.deleteProject);
   const switchConversation = useAppStore((s) => s.switchConversation);
   const deleteConversation = useAppStore((s) => s.deleteConversation);
-  const loadConversationPdf = useAppStore((s) => s.loadConversationPdf);
+  const loadCurrentProjectPdf = useAppStore((s) => s.loadCurrentProjectPdf);
   const mode = useAppStore((s) => s.mode);
   const setMode = useAppStore((s) => s.setMode);
   const setPendingTranslate = useAppStore((s) => s.setPendingTranslate);
   const pdfFullText = useAppStore((s) => s.pdfFullText);
-  const openPdfs = useAppStore((s) => s.openPdfs);
+  const projectPdfs = useAppStore((s) => currentProjectPdfs(s));
   const pdfFullTexts = useAppStore((s) => s.pdfFullTexts);
-  const resetPdfs = useAppStore((s) => s.resetPdfs);
   const fileName = useAppStore((s) => s.fileName);
   const openPdf = useAppStore((s) => s.openPdf);
   const pendingPdf = useAppStore((s) => s.pendingPdf);
@@ -120,6 +133,7 @@ export function ChatPanel() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [projectOpen, setProjectOpen] = useState(false);
   const [sendTick, setSendTick] = useState(0);
   const [replyQuote, setReplyQuote] = useState<{
     text: string;
@@ -197,13 +211,13 @@ export function ChatPanel() {
   // 所以恢复要等水合完成（已完成则立即执行）。
   useEffect(() => {
     const restore = () => {
-      const { currentId: cid, conversations: convs } = useAppStore.getState();
-      if (!cid) return;
-      const conv = convs.find((c) => c.id === cid);
-      if (conv) {
-        setMessages(conv.messages);
-        void loadConversationPdf(conv);
+      const conversation = currentConversation(useAppStore.getState());
+      if (conversation) {
+        setMessages(conversation.messages);
+      } else {
+        setMessages([]);
       }
+      void loadCurrentProjectPdf();
     };
     if (useAppStore.persist.hasHydrated()) {
       restore();
@@ -400,32 +414,62 @@ export function ChatPanel() {
     clearCitations();
   };
 
+  const handleSelectProject = (id: string) => {
+    stop();
+    switchProject(id);
+    const conversation = currentConversation(useAppStore.getState());
+    setMessages(conversation?.messages ?? []);
+    setText("");
+    clearAttachments();
+    clearCitations();
+    void loadCurrentProjectPdf();
+  };
+
+  const handleCreateProject = (name?: string) => {
+    stop();
+    createProject(name);
+    setMessages([]);
+    setText("");
+    clearAttachments();
+    clearCitations();
+    void loadCurrentProjectPdf();
+  };
+
+  const handleDeleteProject = (id: string) => {
+    const wasCurrent = project?.id === id;
+    deleteProject(id);
+    if (!wasCurrent) return;
+    stop();
+    const conversation = currentConversation(useAppStore.getState());
+    setMessages(conversation?.messages ?? []);
+    setText("");
+    clearAttachments();
+    clearCitations();
+    void loadCurrentProjectPdf();
+  };
+
   const handleSelectConversation = (id: string) => {
     stop(); // 流式中切换会话：先停掉，否则旧会话的回复会混进切换后的会话
-    const conv = conversations.find((c) => c.id === id);
+    const conversation = conversations.find((item) => item.id === id);
     switchConversation(id);
-    setMessages(conv?.messages ?? []);
-    void loadConversationPdf(conv);
+    setMessages(conversation?.messages ?? []);
   };
 
   const handleDeleteConversation = (id: string) => {
-    const wasCurrent = useAppStore.getState().currentId === id;
+    const wasCurrent = currentConversation(useAppStore.getState())?.id === id;
     deleteConversation(id);
-    // 删除的是当前会话：停掉进行中的流并清空聊天区，
-    // 否则残留消息会在下次发送时被整体写进新建的会话
-    if (wasCurrent) {
-      stop();
-      setMessages([]);
-    }
+    if (!wasCurrent) return;
+    stop();
+    setMessages([]);
   };
 
   const handleExport = () => {
     if (messages.length === 0) return;
-    const { currentId, conversations: convs } = useAppStore.getState();
-    const title = convs.find((c) => c.id === currentId)?.title || "ChatPaper 对话";
+    const conversation = currentConversation(useAppStore.getState());
+    const title = conversation?.title || "ChatPaper 对话";
     const md = conversationToMarkdown(messages, {
       title,
-      pdfName: fileName ?? undefined,
+      pdfName: projectPdfs.length > 0 ? pdfSummary(projectPdfs) : undefined,
     });
     downloadMarkdown(safeFileName(title), md);
   };
@@ -473,7 +517,7 @@ export function ChatPanel() {
   );
 
   // 已解析全文的各篇 PDF，随消息注入 system 作为（多）文档上下文
-  const documents = openPdfs
+  const documents = projectPdfs
     .map((p) => ({ name: p.name, text: pdfFullTexts[p.id] ?? "" }))
     .filter((d) => d.text);
 
@@ -484,18 +528,30 @@ export function ChatPanel() {
       : messages;
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden bg-background">
+    <div className="relative flex h-full flex-col overflow-hidden bg-transparent">
       {/* header：半透明毛玻璃，消息可滚到其下 */}
       <div className="absolute inset-x-0 top-0 z-10 flex h-12 shrink-0 items-center justify-between bg-background/55 px-2 backdrop-blur-md">
-        <Button
-          className="pointer-events-auto gap-1.5"
-          onClick={handleNewChat}
-          size="sm"
-          variant="ghost"
-        >
-          <SquarePen className="size-4" />
-          新对话
-        </Button>
+        <div className="pointer-events-auto flex min-w-0 items-center gap-1">
+          <Button
+            className="max-w-40 gap-1.5"
+            onClick={() => setProjectOpen(true)}
+            size="sm"
+            title={project?.name ?? "选择项目"}
+            variant="outline"
+          >
+            <FolderOpen className="size-3.5" />
+            <span className="truncate">{project?.name ?? "项目"}</span>
+          </Button>
+          <Button
+            className="gap-1.5"
+            onClick={handleNewChat}
+            size="sm"
+            variant="ghost"
+          >
+            <SquarePen className="size-4" />
+            新对话
+          </Button>
+        </div>
 
         <div className="pointer-events-auto flex items-center gap-0.5 rounded-lg bg-muted/80 p-0.5 backdrop-blur-sm">
           <button
@@ -552,6 +608,17 @@ export function ChatPanel() {
           >
             <Settings className="size-4" />
           </Button>
+          {onCollapse ? (
+            <Button
+              aria-label="收起对话"
+              onClick={onCollapse}
+              size="icon-sm"
+              title="收起到右下角"
+              variant="ghost"
+            >
+              <Minus className="size-4" />
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -688,7 +755,7 @@ export function ChatPanel() {
         </div>
       )}
 
-      {/* 上传新 PDF 撞上「当前对话已在进行」时，让用户选开新对话还是加到当前 */}
+      {/* 上传新 PDF 撞上「当前项目已在进行」时，让用户选开新项目还是加到当前 */}
       <Dialog
         onOpenChange={(o) => {
           if (!o) setPendingPdf(null);
@@ -697,7 +764,7 @@ export function ChatPanel() {
       >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>当前对话已在进行中</DialogTitle>
+            <DialogTitle>当前项目已在进行中</DialogTitle>
             <DialogDescription className="truncate" title={pendingPdf?.name}>
               新 PDF「{pendingPdf?.name}」要怎么处理？
             </DialogDescription>
@@ -705,33 +772,40 @@ export function ChatPanel() {
           <DialogFooter className="gap-2 sm:gap-2">
             <Button
               onClick={() => {
-                const f = pendingPdf;
+                const file = pendingPdf;
                 setPendingPdf(null);
-                if (f) openPdf(f); // 加入当前会话的 PDF 列表（多 PDF 并存）
+                if (file) openPdf(file);
               }}
               variant="outline"
             >
-              加到当前对话
+              加到当前项目
             </Button>
             <Button
               onClick={() => {
-                const f = pendingPdf;
+                const file = pendingPdf;
                 setPendingPdf(null);
                 stop();
-                newConversation();
+                createProject(file?.name);
                 setMessages([]);
+                setText("");
                 clearAttachments();
                 clearCitations();
-                resetPdfs(); // 新对话只带新上传的这篇
-                if (f) openPdf(f); // currentId 已清空，下次发消息再新建会话
+                if (file) openPdf(file);
               }}
             >
-              开新对话
+              开新项目
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      <ProjectDialog
+        onCreate={handleCreateProject}
+        onDelete={handleDeleteProject}
+        onOpenChange={setProjectOpen}
+        onSelect={handleSelectProject}
+        open={projectOpen}
+      />
       <SettingsDialog onOpenChange={setSettingsOpen} open={settingsOpen} />
       <HistoryDialog
         onDelete={handleDeleteConversation}

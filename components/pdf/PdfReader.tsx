@@ -39,7 +39,12 @@ import { extractPdfText } from "@/lib/pdfText";
 import { matchSpans } from "@/lib/textMatch";
 import type { Annotation } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { type PdfTextStatus, useAppStore } from "@/store/useAppStore";
+import {
+  currentConversation,
+  currentProjectPdfs,
+  type PdfTextStatus,
+  useAppStore,
+} from "@/store/useAppStore";
 
 // pdf.js worker：本地打包（new URL 静态资源引用，Turbopack/webpack 都会发射该文件），
 // 版本与 react-pdf 内置 pdfjs 永远一致，且不依赖 unpkg CDN（国内访问不稳、挂了阅读器全废）
@@ -77,7 +82,7 @@ export function PdfReader() {
   const setPendingTranslate = useAppStore((s) => s.setPendingTranslate);
   const pdfJump = useAppStore((s) => s.pdfJump);
   const pdfId = useAppStore((s) => s.pdfId);
-  const openPdfsCount = useAppStore((s) => s.openPdfs.length);
+  const openPdfsCount = useAppStore((s) => currentProjectPdfs(s).length);
   const annotations = useAppStore((s) => s.annotations);
   const setAnnotations = useAppStore((s) => s.setAnnotations);
   const addAnnotation = useAppStore((s) => s.addAnnotation);
@@ -244,9 +249,9 @@ export function PdfReader() {
     (file?: File | null) => {
       if (!file || file.type !== "application/pdf") return;
       const st = useAppStore.getState();
-      const conv = st.conversations.find((c) => c.id === st.currentId);
-      // 当前对话已经在聊、且已绑了 PDF：让用户选「开新对话」还是「加到当前」
-      if ((conv?.messages.length ?? 0) > 0 && st.pdfId) {
+      const conversation = currentConversation(st);
+      // 当前项目已经在聊、且已绑了 PDF：让用户选「开新项目」还是「加到当前」
+      if ((conversation?.messages.length ?? 0) > 0 && currentProjectPdfs(st).length > 0) {
         st.setPendingPdf(file);
       } else {
         openPdf(file);
