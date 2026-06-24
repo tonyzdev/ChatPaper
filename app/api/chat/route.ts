@@ -29,6 +29,10 @@ interface ChatBody {
   // DeepSeek 不支持图像：前端用视觉模型转写好后随消息发来（按最后一条 user 的图顺序）
   imageTranscriptions?: (string | null)[];
   deepseekThinking?: boolean;
+  contextEngine?: "builtin" | "open-notebook";
+  contextScope?: "current-pdf" | "project";
+  /** Open Notebook 已构建好的项目级上下文（包含多 PDF / 历史对话） */
+  openNotebookContext?: string;
   // 全文解析：前端把已解析的各篇 PDF 全文随消息发来，注入 system 作为文档上下文
   documents?: { name: string; text: string }[];
   /** @deprecated 旧单文档字段，兼容保留；新前端发 documents */
@@ -84,6 +88,8 @@ export async function POST(req: Request) {
     accessCode,
     imageTranscriptions,
     deepseekThinking,
+    contextEngine,
+    openNotebookContext,
     documents,
     fullText,
     pdfName,
@@ -165,17 +171,18 @@ export async function POST(req: Request) {
     }
   }
 
-  // 全文解析开启时，把整篇 PDF 作为独立 system 消息注入，并打 Anthropic
-  // 缓存断点：长全文每轮重复计费是成本大头，命中缓存后该段输入价约 1/10，
-  // 首 token 延迟也明显下降（OpenAI/DeepSeek 自动缓存，忽略该标记）
-  // 新前端发 documents（多篇）；旧 fullText/pdfName 兼容为单元素
+  // 项目级上下文有两条来源：
+  // 1) 内置模式：前端直接上传已解析的全文 documents
+  // 2) Open Notebook：前端先把项目同步到知识库，再把构建好的上下文文本回填到这里
   const docs =
     documents ?? (fullText ? [{ name: pdfName ?? "PDF", text: fullText }] : []);
-  const docBlock = buildDocumentsBlock(docs);
-  const systemMessages: ModelMessage[] = docBlock
+  const contextBlock =
+    openNotebookContext?.trim() ||
+    (contextEngine === "open-notebook" ? null : buildDocumentsBlock(docs));
+  const systemMessages: ModelMessage[] = contextBlock
     ? [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "system", content: docBlock, providerOptions: CACHE_EPHEMERAL },
+        { role: "system", content: contextBlock, providerOptions: CACHE_EPHEMERAL },
       ]
     : [{ role: "system", content: SYSTEM_PROMPT }];
 

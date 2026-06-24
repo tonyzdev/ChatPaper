@@ -5,6 +5,7 @@ import {
   currentProject,
   currentProjectConversations,
   currentProjectPdfs,
+  findDuplicatePdf,
   migrateLegacyProjects,
   pdfSummary,
   type Project,
@@ -48,6 +49,25 @@ describe("migrateLegacyProjects", () => {
     expect(out.projects[0].pdfs).toEqual([{ id: "pdf-1", name: "paper-a.pdf" }]);
     expect(out.projects[1].pdfs).toEqual([{ id: "pdf-2", name: "paper-b.pdf" }]);
     expect(out.currentProjectId).toBe(out.projects[1].id);
+  });
+
+  it("迁移旧项目时会去掉重复 PDF 记录", () => {
+    const out = migrateLegacyProjects(
+      [
+        {
+          title: "重复 PDF 项目",
+          updatedAt: 100,
+          pdfs: [
+            { id: "pdf-1", name: "paper.pdf" },
+            { id: "pdf-2", name: "paper.pdf" },
+          ],
+        },
+      ],
+      null,
+    );
+
+    expect(out.projects[0].pdfs).toEqual([{ id: "pdf-1", name: "paper.pdf" }]);
+    expect(out.projects[0].currentPdfId).toBe("pdf-1");
   });
 
   it("无旧数据时返回空项目集", () => {
@@ -131,6 +151,31 @@ describe("project actions", () => {
     const nextId = useAppStore.getState().deleteProject(alphaId);
     expect(nextId).toBe(betaId);
     expect(currentProject(useAppStore.getState())?.name).toBe("Beta");
+  });
+});
+
+describe("findDuplicatePdf", () => {
+  it("按文件名、大小和修改时间识别重复 PDF", () => {
+    const file = new File(["abc"], "Paper.PDF", {
+      type: "application/pdf",
+      lastModified: 123,
+    });
+
+    expect(
+      findDuplicatePdf(
+        [{ id: "pdf-1", name: "paper.pdf", size: 3, lastModified: 123 }],
+        file,
+      )?.id,
+    ).toBe("pdf-1");
+    expect(
+      findDuplicatePdf(
+        [{ id: "pdf-1", name: "paper.pdf", size: 4, lastModified: 123 }],
+        file,
+      ),
+    ).toBeUndefined();
+    expect(findDuplicatePdf([{ id: "legacy", name: "Paper.PDF" }], file)?.id).toBe(
+      "legacy",
+    );
   });
 });
 

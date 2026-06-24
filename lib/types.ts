@@ -27,6 +27,10 @@ export interface Annotation {
 /** 前端随消息发给 /api/chat 的额外字段 */
 export interface ChatRequestBody {
   citations?: Citation[];
+  contextEngine?: "builtin" | "open-notebook";
+  contextScope?: "current-pdf" | "project";
+  openNotebookContext?: string;
+  documents?: { name: string; text: string }[];
   /** 整篇 PDF 全文（启用全文解析时随消息发送，注入到 system 作为文档上下文） */
   fullText?: string;
   /** PDF 文件名，用于全文上下文的标题 */

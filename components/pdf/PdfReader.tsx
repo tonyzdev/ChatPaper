@@ -42,6 +42,7 @@ import { cn } from "@/lib/utils";
 import {
   currentConversation,
   currentProjectPdfs,
+  findDuplicatePdf,
   type PdfTextStatus,
   useAppStore,
 } from "@/store/useAppStore";
@@ -249,9 +250,14 @@ export function PdfReader() {
     (file?: File | null) => {
       if (!file || file.type !== "application/pdf") return;
       const st = useAppStore.getState();
+      const pdfs = currentProjectPdfs(st);
       const conversation = currentConversation(st);
+      if (findDuplicatePdf(pdfs, file)) {
+        openPdf(file);
+        return;
+      }
       // 当前项目已经在聊、且已绑了 PDF：让用户选「开新项目」还是「加到当前」
-      if ((conversation?.messages.length ?? 0) > 0 && currentProjectPdfs(st).length > 0) {
+      if ((conversation?.messages.length ?? 0) > 0 && pdfs.length > 0) {
         st.setPendingPdf(file);
       } else {
         openPdf(file);

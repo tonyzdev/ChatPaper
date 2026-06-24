@@ -22,12 +22,14 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
-  type Provider,
+  type OpenNotebookSettings,
   type OcrSettings,
+  type Provider,
   type TranslationSettings,
   useAppStore,
   type VisionSettings,
 } from "@/store/useAppStore";
+import type { ContextEngine } from "@/lib/openNotebook";
 
 const MODEL_PRESETS: Record<Provider, string[]> = {
   anthropic: ["claude-sonnet-4-6", "claude-opus-4-8"],
@@ -85,6 +87,12 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
   const [vision, setVision] = useState<VisionSettings>(settings.vision);
   const [thinking, setThinking] = useState(settings.deepseekThinking);
   const [autoParse, setAutoParse] = useState(settings.autoParseFullText);
+  const [contextEngine, setContextEngine] = useState<ContextEngine>(
+    settings.contextEngine,
+  );
+  const [openNotebook, setOpenNotebook] = useState<OpenNotebookSettings>(
+    settings.openNotebook,
+  );
   const [ocr, setOcr] = useState<OcrSettings>(settings.ocr);
   const [test, setTest] = useState<TestState>({ status: "idle" });
 
@@ -104,6 +112,11 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
       vision: { ...vision, apiKey: vision.apiKey.trim(), model: vision.model.trim() },
       deepseekThinking: thinking,
       autoParseFullText: autoParse,
+      contextEngine,
+      openNotebook: {
+        baseUrl: openNotebook.baseUrl.trim(),
+        password: openNotebook.password.trim(),
+      },
       ocr: {
         ...ocr,
         apiKey: ocr.apiKey.trim(),
@@ -118,7 +131,8 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
     apiKey.trim().length > 0 ||
     accessCode.trim().length > 0 ||
     (!translation.useMainModel && translation.apiKey.trim().length > 0) ||
-    (ocr.enabled && ocr.apiKey.trim().length > 0);
+    (ocr.enabled && ocr.apiKey.trim().length > 0) ||
+    (contextEngine === "open-notebook" && openNotebook.baseUrl.trim().length > 0);
 
   const testVision = async () => {
     setTest({ status: "testing" });
@@ -420,6 +434,63 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
 
         <TabsContent value="document">
           <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto py-1">
+            <div className="flex flex-col gap-2.5 rounded-lg border p-3">
+              <Field label="项目上下文引擎">
+                <Select
+                  onValueChange={(value) => setContextEngine(value as ContextEngine)}
+                  value={contextEngine}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="builtin">内置全文上下文</SelectItem>
+                    <SelectItem value="open-notebook">Open Notebook</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              {contextEngine === "open-notebook" ? (
+                <div className="flex flex-col gap-2.5 border-t pt-2.5">
+                  <p className="text-muted-foreground text-xs">
+                    发送消息前，浏览器会把当前项目里已解析的 PDF 全文与各段对话同步到
+                    Open Notebook，再把该项目上下文回填给 ChatPaper。主对话模型仍使用「模型」页里的配置。
+                  </p>
+                  <Field label="Open Notebook 地址">
+                    <Input
+                      autoComplete="off"
+                      onChange={(e) =>
+                        setOpenNotebook((value) => ({
+                          ...value,
+                          baseUrl: e.target.value,
+                        }))
+                      }
+                      placeholder="http://localhost:5055 或 https://notebook.example.com"
+                      value={openNotebook.baseUrl}
+                    />
+                  </Field>
+                  <Field label="Open Notebook 密码（未开启可留空）">
+                    <Input
+                      autoComplete="off"
+                      onChange={(e) =>
+                        setOpenNotebook((value) => ({
+                          ...value,
+                          password: e.target.value,
+                        }))
+                      }
+                      placeholder="OPEN_NOTEBOOK_PASSWORD"
+                      type="password"
+                      value={openNotebook.password}
+                    />
+                  </Field>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-xs">
+                  当前仍使用浏览器本地解析的全文作为对话上下文，不依赖外部知识库。
+                </p>
+              )}
+            </div>
+
             <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
               <div className="flex flex-col">
                 <span className="font-medium text-sm">自动解析全文</span>
@@ -430,7 +501,7 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
               <Switch checked={autoParse} onCheckedChange={setAutoParse} />
             </div>
             <p className="text-muted-foreground text-xs">
-              全文在浏览器本地解析，不上传服务器；仅在你发送消息时随该消息发给所配置的模型。过长的全文会按长度截断。
+              全文在浏览器本地解析；内置引擎会随消息直接发给模型，Open Notebook 引擎则会先同步到项目知识库后再引用。
             </p>
 
             <div className="flex flex-col gap-2.5 rounded-lg border p-3">

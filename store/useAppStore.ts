@@ -9,8 +9,11 @@ import { deleteAnnotations, saveAnnotations } from "@/lib/annotationStore";
 import { kvDel, kvGet, kvSet } from "@/lib/kvStore";
 import { deletePdf, loadPdf, savePdf } from "@/lib/pdfStore";
 import type { Annotation, Citation } from "@/lib/types";
+import type { ContextEngine, ContextScope } from "@/lib/openNotebook";
 
 export type Provider = "anthropic" | "openai" | "deepseek";
+
+export type ChatAnswerMode = "direct" | "agent";
 
 export interface VisionSettings {
   /** 主模型不支持图像时，用此视觉模型先把图转成文本再喂主模型 */
@@ -43,6 +46,11 @@ export interface OcrSettings {
   model: string;
 }
 
+export interface OpenNotebookSettings {
+  baseUrl: string;
+  password: string;
+}
+
 export interface Settings {
   provider: Provider;
   apiKey: string;
@@ -60,6 +68,13 @@ export interface Settings {
   deepseekThinking: boolean;
   /** 打开 PDF 时是否自动解析全文并作为对话上下文（默认关） */
   autoParseFullText: boolean;
+  /** 项目级上下文引擎：内置全文注入 or Open Notebook 同步 */
+  contextEngine: ContextEngine;
+  /** 回答时默认参考左侧当前 PDF，或整个项目知识库 */
+  contextScope: ContextScope;
+  /** 普通直答，或用 ReAct Agent 先检索项目文档再回答 */
+  chatAnswerMode: ChatAnswerMode;
+  openNotebook: OpenNotebookSettings;
 }
 
 /** 整篇 PDF 全文解析状态 */
@@ -68,6 +83,52 @@ export type PdfTextStatus = "idle" | "parsing" | "ready" | "error" | "scanned";
 export interface OpenPdf {
   id: string;
   name: string;
+  size?: number;
+  lastModified?: number;
+}
+
+function normalizedPdfName(name: string): string {
+  return name.trim().toLocaleLowerCase();
+}
+
+function openPdfDedupeKey(pdf: OpenPdf): string {
+  const name = normalizedPdfName(pdf.name);
+  if (typeof pdf.size !== "number" || typeof pdf.lastModified !== "number") {
+    return name;
+  }
+  return `${name}\0${pdf.size}\0${pdf.lastModified}`;
+}
+
+function dedupeOpenPdfs(pdfs: OpenPdf[]): OpenPdf[] {
+  const seen = new Set<string>();
+  const seenNames = new Set<string>();
+  const legacyNames = new Set<string>();
+  const result: OpenPdf[] = [];
+
+  for (const pdf of pdfs) {
+    const key = openPdfDedupeKey(pdf);
+    const name = normalizedPdfName(pdf.name);
+    const legacy = typeof pdf.size !== "number" || typeof pdf.lastModified !== "number";
+    if (seen.has(key) || legacyNames.has(name) || (legacy && seenNames.has(name))) {
+      continue;
+    }
+    seen.add(key);
+    seenNames.add(name);
+    if (legacy) legacyNames.add(name);
+    result.push(pdf);
+  }
+  return result;
+}
+
+export function findDuplicatePdf(pdfs: OpenPdf[], file: File): OpenPdf | undefined {
+  const name = normalizedPdfName(file.name);
+  return pdfs.find((pdf) => {
+    if (normalizedPdfName(pdf.name) !== name) return false;
+    if (typeof pdf.size !== "number" || typeof pdf.lastModified !== "number") {
+      return true;
+    }
+    return pdf.size === file.size && pdf.lastModified === file.lastModified;
+  });
 }
 
 export interface Conversation {
@@ -193,7 +254,7 @@ function normalizeProject(project: Partial<Project>, index: number): Project {
   const conversations = Array.isArray(project.conversations)
     ? project.conversations.map(normalizeConversation)
     : [];
-  const pdfs = Array.isArray(project.pdfs) ? project.pdfs : [];
+  const pdfs = Array.isArray(project.pdfs) ? dedupeOpenPdfs(project.pdfs) : [];
   const currentConversationId =
     project.currentConversationId &&
     conversations.some((c) => c.id === project.currentConversationId)
@@ -244,7 +305,7 @@ export function migrateLegacyProjects(
 
   const projects = conversations.map((legacy, index) => {
     const conversation = normalizeConversation(legacy);
-    const pdfs = legacyConversationPdfs(legacy);
+    const pdfs = dedupeOpenPdfs(legacyConversationPdfs(legacy));
     return {
       id: crypto.randomUUID(),
       name:
@@ -442,6 +503,13 @@ export const useAppStore = create<AppState>()(
         },
         deepseekThinking: false,
         autoParseFullText: false,
+        contextEngine: "builtin",
+        contextScope: "current-pdf",
+        chatAnswerMode: "direct",
+        openNotebook: {
+          baseUrl: "",
+          password: "",
+        },
       },
       projects: [],
       currentProjectId: null,
@@ -457,6 +525,13 @@ export const useAppStore = create<AppState>()(
       openPdf: (file) => {
         const fileName = file.name;
         const projectId = get().ensureProject(stripPdfExtension(fileName));
+        const project = get().projects.find((item) => item.id === projectId);
+        const duplicate = project ? findDuplicatePdf(project.pdfs, file) : undefined;
+        if (duplicate) {
+          void get().activatePdf(duplicate.id);
+          return;
+        }
+
         pdfLoadRequest += 1;
         const prev = get().fileUrl;
         if (prev) URL.revokeObjectURL(prev);
@@ -475,7 +550,15 @@ export const useAppStore = create<AppState>()(
               ? {
                   ...project,
                   updatedAt: Date.now(),
-                  pdfs: [...project.pdfs, { id, name: fileName }],
+                  pdfs: [
+                    ...project.pdfs,
+                    {
+                      id,
+                      name: fileName,
+                      size: file.size,
+                      lastModified: file.lastModified,
+                    },
+                  ],
                   currentPdfId: id,
                 }
               : project,
@@ -878,6 +961,11 @@ export const useAppStore = create<AppState>()(
               ...current.settings.ocr,
               ...(p.settings?.ocr ?? {}),
             },
+            openNotebook: {
+              ...current.settings.openNotebook,
+              ...(p.settings?.openNotebook ?? {}),
+            },
+            chatAnswerMode: p.settings?.chatAnswerMode ?? current.settings.chatAnswerMode,
           },
           projects: normalized.projects,
           currentProjectId: normalized.currentProjectId,
