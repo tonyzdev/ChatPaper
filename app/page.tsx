@@ -21,6 +21,7 @@ const PdfReader = dynamic(
 
 export default function Home() {
   const colorMode = useAppStore((s) => s.pdfColorMode);
+  const chatOpen = useAppStore((s) => s.chatOpen);
 
   // 颜色模式应用为全局主题：dark→shadcn 深色；sepia→护眼绿。chat、引用浮钮等所有组件随之变化
   useEffect(() => {
@@ -34,13 +35,22 @@ export default function Home() {
   }, [colorMode]);
 
   return (
-    <div className="flex h-full w-full">
-      {/* 多 PDF 文献栏（可折叠；无 PDF 时不渲染） */}
-      <PdfSidebar />
-      {/* PDF 铺满整个内容区作底层，聊天悬浮其上（FloatingChat 相对此容器定位） */}
-      <div className="relative min-w-0 flex-1">
-        <PdfReader />
-        <FloatingChat />
+    <div className="h-full w-full overflow-hidden bg-muted/20 p-4">
+      <div className="relative flex h-full min-w-0 gap-4">
+        <div className="flex min-w-0 flex-1 overflow-hidden rounded-3xl border bg-background shadow-sm">
+          <PdfSidebar />
+          <div className="min-w-0 flex-1">
+            <PdfReader />
+          </div>
+        </div>
+
+        {chatOpen ? (
+          <div className="flex min-w-[24rem] shrink-0 basis-[28rem] xl:max-w-[32rem]">
+            <FloatingChat />
+          </div>
+        ) : null}
+
+        {!chatOpen ? <FloatingChat /> : null}
       </div>
     </div>
   );
