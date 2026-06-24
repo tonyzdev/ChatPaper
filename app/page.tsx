@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect } from "react";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { FloatingChat } from "@/components/chat/FloatingChat";
 import { PdfSidebar } from "@/components/pdf/PdfSidebar";
 import { useAppStore } from "@/store/useAppStore";
@@ -36,21 +37,42 @@ export default function Home() {
 
   return (
     <div className="h-full w-full overflow-hidden bg-muted/20 p-4">
-      <div className="relative flex h-full min-w-0 gap-4">
-        <div className="flex min-w-0 flex-1 overflow-hidden rounded-3xl border bg-background shadow-sm">
-          <PdfSidebar />
-          <div className="min-w-0 flex-1">
-            <PdfReader />
-          </div>
-        </div>
-
+      <div className="relative h-full min-w-0">
         {chatOpen ? (
-          <div className="flex min-w-[24rem] shrink-0 basis-[28rem] xl:max-w-[32rem]">
+          <PanelGroup
+            autoSaveId="chatpaper-layout"
+            className="h-full min-w-0"
+            direction="horizontal"
+          >
+            <Panel className="min-w-0" defaultSize={70} minSize={42}>
+              <div className="flex h-full min-w-0 overflow-hidden rounded-3xl border bg-background shadow-sm">
+                <PdfSidebar />
+                <div className="min-w-0 flex-1">
+                  <PdfReader />
+                </div>
+              </div>
+            </Panel>
+
+            <PanelResizeHandle className="group relative flex w-4 shrink-0 cursor-col-resize items-center justify-center text-border transition-colors hover:text-primary/50 data-[resize-handle-state=drag]:text-primary">
+              <span className="absolute inset-y-0 w-4" />
+              <span className="h-24 w-px rounded-full bg-current" />
+            </PanelResizeHandle>
+
+            <Panel className="min-w-0" defaultSize={30} maxSize={42} minSize={24}>
+              <FloatingChat />
+            </Panel>
+          </PanelGroup>
+        ) : (
+          <div className="relative flex h-full min-w-0">
+            <div className="flex min-w-0 flex-1 overflow-hidden rounded-3xl border bg-background shadow-sm">
+              <PdfSidebar />
+              <div className="min-w-0 flex-1">
+                <PdfReader />
+              </div>
+            </div>
             <FloatingChat />
           </div>
-        ) : null}
-
-        {!chatOpen ? <FloatingChat /> : null}
+        )}
       </div>
     </div>
   );
